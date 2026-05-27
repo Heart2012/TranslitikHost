@@ -90,6 +90,29 @@ function getUkrainianLetters(text) {
   return [...found];
 }
 
+function toUsernameTitleCase(username) {
+  return username.replace(
+    /(^|_)([a-z])/g,
+    (_, separator, letter) => separator + letter.toUpperCase()
+  );
+}
+
+async function checkUsernameAvailability(username) {
+  try {
+    await bot.telegram.getChat(`@${username}`);
+    return '❌ занят';
+  } catch (err) {
+    const description = err?.response?.description || err?.description || err?.message || '';
+
+    if (/chat not found/i.test(description)) {
+      return '✅ возможно свободен';
+    }
+
+    console.error(`Failed to check @${username}:`, err);
+    return '? не проверено';
+  }
+}
+
 function countTelegramKeys(text) {
   const words = text
     .toLowerCase()
@@ -308,7 +331,7 @@ bot.hears('🚫 bot', (ctx) => {
   ctx.reply('✅ Режим: без bot', getKeyboard());
 });
 
-bot.on('text', (ctx) => {
+bot.on('text', async (ctx) => {
   const text = ctx.message.text.trim();
 
   if (!text) {
@@ -357,11 +380,15 @@ bot.on('text', (ctx) => {
       ? ` 🇺🇦 ${result.ukrainian.join(', ')}`
       : '';
 
-    result.variants.forEach(v => {
-      finalMsg += withBot
-        ? `@${v}bot${usernameMarks}\n`
-        : `@${v}${usernameMarks}\n`;
-    });
+    for (const v of result.variants) {
+      const username = toUsernameTitleCase(v);
+      const finalUsername = withBot
+        ? `${username}bot`
+        : username;
+      const availability = await checkUsernameAvailability(finalUsername);
+
+      finalMsg += `@${finalUsername}${usernameMarks} ${availability}\n`;
+    }
 
     finalMsg += '\n';
   }

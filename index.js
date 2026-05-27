@@ -54,16 +54,12 @@ function limitVariants(arr) {
     : arr;
 }
 
-// авто-разделение склеенного текста
+// исправлённое разделение склеенного текста
 function splitTasks(text) {
   return text
-    // НовиниЛьвів -> Новини\nЛьвів
-    .replace(/([а-яіїєґa-z])([А-ЯІЇЄҐ]{2,}|[А-ЯІЇЄҐ][а-яіїєґ])/g, '$1\n$2')
-    // | Новини
-    .replace(/\|\s*Новини/gi, '| Новини\n')
-    // • Новини
+    .replace(/Новини(?=[А-ЯІЇЄҐ])/g, 'Новини\n')
+    .replace(/Лева(?=[А-ЯІЇЄҐ])/g, 'Лева\n')
     .replace(/•\s*Новини/gi, '• Новини\n')
-    // убрать лишние переносы
     .split('\n')
     .map(v => v.trim())
     .filter(Boolean);
@@ -92,6 +88,7 @@ function telegramTranslit(text) {
       continue;
     }
 
+    // пробел -> _
     if (/\s/.test(ch)) {
       variants = limitVariants(
         variants.map(v => v + '_')
@@ -156,6 +153,7 @@ function telegramTranslit(text) {
       continue;
     }
 
+    // словарь
     if (translitMap[ch]) {
       variants = limitVariants(
         variants.map(v => v + translitMap[ch])
@@ -163,6 +161,7 @@ function telegramTranslit(text) {
       continue;
     }
 
+    // латиница / цифры
     if (/[a-z0-9]/.test(ch)) {
       variants = limitVariants(
         variants.map(v => v + ch)
@@ -170,6 +169,7 @@ function telegramTranslit(text) {
       continue;
     }
 
+    // неизвестные / укр
     unknown.add(ch);
   }
 
@@ -189,7 +189,7 @@ function telegramTranslit(text) {
   };
 }
 
-// команды
+// меню
 bot.telegram.setMyCommands([
   { command: 'start', description: 'старт' },
   { command: 'bot', description: '+ bot' },
@@ -231,7 +231,7 @@ bot.command('nobot', (ctx) => {
   ctx.reply('✅ Режим: без bot', getKeyboard());
 });
 
-// нижние кнопки
+// кнопки
 bot.hears('➕ bot', (ctx) => {
   userSettings.set(ctx.from.id, { withBot: true });
   ctx.reply('✅ Режим: + bot', getKeyboard());
@@ -252,7 +252,7 @@ bot.on('text', (ctx) => {
   const withBot =
     userSettings.get(ctx.from.id)?.withBot || false;
 
-  // каждая задача отдельно
+  // каждая строка = отдельная задача
   const lines = splitTasks(text);
 
   let finalMsg = '';
@@ -272,8 +272,7 @@ bot.on('text', (ctx) => {
     if (hasMultiple) marks.push('🔀');
 
     if (marks.length) {
-      finalMsg +=
-        `__${line}__ ${marks.join(' ')}\n`;
+      finalMsg += `${line} ${marks.join(' ')}\n`;
     }
 
     result.variants.forEach(v => {
@@ -292,7 +291,6 @@ bot.on('text', (ctx) => {
   }
 
   ctx.reply(finalMsg.trim(), {
-    parse_mode: 'Markdown',
     ...getKeyboard()
   });
 });

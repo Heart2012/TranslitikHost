@@ -42,7 +42,7 @@ function telegramTranslit(text) {
 
   const unknown = new Set();
 
-  // кс=x
+  // кс = x
   text = text.replace(/кс/g, '§');
 
   let variants = [''];
@@ -56,7 +56,7 @@ function telegramTranslit(text) {
       continue;
     }
 
-    // пробел
+    // пробел -> _
     if (/\s/.test(ch)) {
       variants = variants.map(v => v + '_');
       continue;
@@ -65,10 +65,12 @@ function telegramTranslit(text) {
     // й = y / i
     if (ch === 'й') {
       let next = [];
+
       for (const v of variants) {
         next.push(v + 'y');
         next.push(v + 'i');
       }
+
       variants = next;
       continue;
     }
@@ -79,14 +81,17 @@ function telegramTranslit(text) {
 
       if (isLast) {
         let next = [];
+
         for (const v of variants) {
           next.push(v + 'i');
           next.push(v + 'y');
         }
+
         variants = next;
       } else {
         variants = variants.map(v => v + 'i');
       }
+
       continue;
     }
 
@@ -96,14 +101,17 @@ function telegramTranslit(text) {
 
       if (isLast) {
         let next = [];
+
         for (const v of variants) {
           next.push(v + 'k');
           next.push(v + 'x');
         }
+
         variants = next;
       } else {
         variants = variants.map(v => v + 'k');
       }
+
       continue;
     }
 
@@ -120,7 +128,7 @@ function telegramTranslit(text) {
     }
 
     // неизвестные символы
-    if (!/[^\w]/.test(ch)) {
+    if (!/[^\w\s]/.test(ch)) {
       unknown.add(ch);
     }
   }
@@ -175,8 +183,8 @@ ${result.unknown.join(' ')}
 
   msg += '🎯 Telegram username:\n\n';
 
-  result.variants.forEach((v, i) => {
-    msg += `${i + 1}. ${v}\n`;
+  result.variants.forEach((v) => {
+    msg += `${v}\n`;
   });
 
   ctx.reply(msg);

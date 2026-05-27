@@ -131,12 +131,12 @@ async function checkUsernameAvailability(username) {
 
   try {
     await bot.telegram.getChat(`@${username}`);
-    return '❌ зайнят';
+    return '❌ зайнято';
   } catch (err) {
     const description = err?.response?.description || err?.description || err?.message || '';
 
     if (/chat not found/i.test(description)) {
-      return '✅ вільний';
+      return '✅ вільно';
     }
 
     console.error(`Failed to check @${username}:`, err);
@@ -160,7 +160,7 @@ function checkUsernameOnTelegramWeb(username) {
         const location = res.headers.location || '';
 
         if ([301, 302, 303, 307, 308].includes(res.statusCode)) {
-          done(location.includes('telegram.org') ? '✅ вільний' : null);
+          done(location.includes('telegram.org') ? '✅ вільно' : null);
           res.resume();
           return;
         }
@@ -180,7 +180,7 @@ function checkUsernameOnTelegramWeb(username) {
             res.statusCode === 200 &&
             /class="tgme_page_(title|extra)"/i.test(html);
 
-          done(isProfilePage ? '❌ зайнят' : null);
+          done(isProfilePage ? '❌ зайнято' : null);
         });
         res.on('error', () => done(null));
       }

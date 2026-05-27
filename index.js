@@ -8,6 +8,10 @@ if (!BOT_TOKEN) {
 
 const bot = new Telegraf(BOT_TOKEN);
 
+bot.catch((err, ctx) => {
+  console.error(`Bot error for update ${ctx.update.update_id}:`, err);
+});
+
 const userSettings = new Map();
 const MAX_VARIANTS = 50;
 
@@ -231,13 +235,12 @@ function telegramTranslit(text) {
   };
 }
 
-// меню
-bot.telegram.setMyCommands([
+const commands = [
   { command: 'start', description: 'старт' },
   { command: 'bot', description: '+ bot' },
   { command: 'nobot', description: 'без bot' },
   { command: 'help', description: 'довідка' }
-]);
+];
 
 bot.start((ctx) => {
   const withBot =
@@ -330,6 +333,18 @@ bot.on('text', (ctx) => {
   });
 });
 
-bot.launch();
+async function startBot() {
+  await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+  await bot.telegram.setMyCommands(commands);
+  await bot.launch();
 
-console.log('Telegram Search Bot started');
+  console.log('Telegram Search Bot started');
+}
+
+startBot().catch((err) => {
+  console.error('Failed to start Telegram bot:', err);
+  process.exit(1);
+});
+
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));

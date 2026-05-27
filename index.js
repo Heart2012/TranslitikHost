@@ -1,4 +1,5 @@
 const { Telegraf, Markup } = require('telegraf');
+const https = require('https');
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 
@@ -98,6 +99,12 @@ function toUsernameTitleCase(username) {
 }
 
 async function checkUsernameAvailability(username) {
+  const webStatus = await checkUsernameOnTelegramWeb(username);
+
+  if (webStatus) {
+    return webStatus;
+  }
+
   try {
     await bot.telegram.getChat(`@${username}`);
     return '❌ зайнят';
@@ -111,6 +118,56 @@ async function checkUsernameAvailability(username) {
     console.error(`Failed to check @${username}:`, err);
     return '? не проверено';
   }
+}
+
+function checkUsernameOnTelegramWeb(username) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (status) => {
+      if (!settled) {
+        settled = true;
+        resolve(status);
+      }
+    };
+
+    const req = https.get(
+      `https://t.me/${encodeURIComponent(username)}`,
+      (res) => {
+        const location = res.headers.location || '';
+
+        if ([301, 302, 303, 307, 308].includes(res.statusCode)) {
+          done(location.includes('telegram.org') ? '✅ вільний' : null);
+          res.resume();
+          return;
+        }
+
+        let html = '';
+
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => {
+          html += chunk;
+
+          if (html.length > 50000) {
+            res.destroy();
+          }
+        });
+        res.on('end', () => {
+          const isProfilePage =
+            res.statusCode === 200 &&
+            /Telegram:\s*(Contact|View|Channel|Group|Bot)\s+@/i.test(html);
+
+          done(isProfilePage ? '❌ зайнят' : null);
+        });
+        res.on('error', () => done(null));
+      }
+    );
+
+    req.setTimeout(7000, () => {
+      req.destroy();
+      done(null);
+    });
+    req.on('error', () => done(null));
+  });
 }
 
 function countTelegramKeys(text) {

@@ -122,8 +122,8 @@ ${withBot ? '✅ + bot' : '✅ без bot'}`;
 // Каждое слово с большой буквы
 function toTitleCase(text) {
   return text.replace(
-    /\b([а-яіїєґa-z])/gi,
-    c => c.toUpperCase()
+    /(^|[\s_.\-:;,/\\|•]+)([а-яіїєґa-z])/giu,
+    (_, separator, letter) => separator + letter.toUpperCase()
   );
 }
 
@@ -342,19 +342,25 @@ bot.on('text', (ctx) => {
     let marks = [];
 
     if (hasUnknown) marks.push('⚠️');
-    if (hasUkrainian) marks.push(`🇺🇦 ${result.ukrainian.join(', ')}`);
     if (hasTooManyKeys) marks.push(`5️⃣ ${result.keyCount} ключей`);
     if (hasMultiple) marks.push('🔀');
 
-    // подчеркнутый заголовок
+    finalMsg += `<u>${escapeHtml(line)}</u>`;
+
     if (marks.length) {
-      finalMsg += `<u>${escapeHtml(line)}</u> ${marks.join(' ')}\n`;
+      finalMsg += ` ${marks.join(' ')}`;
     }
+
+    finalMsg += '\n';
+
+    const usernameMarks = hasUkrainian
+      ? ` 🇺🇦 ${result.ukrainian.join(', ')}`
+      : '';
 
     result.variants.forEach(v => {
       finalMsg += withBot
-        ? `@${v}bot\n`
-        : `@${v}\n`;
+        ? `@${v}bot${usernameMarks}\n`
+        : `@${v}${usernameMarks}\n`;
     });
 
     finalMsg += '\n';

@@ -98,6 +98,13 @@ function toUsernameTitleCase(username) {
   );
 }
 
+function normalizeUsername(username) {
+  return username
+    .replace(/[^a-z0-9_]/gi, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
 async function checkUsernameAvailability(username) {
   const webStatus = await checkUsernameOnTelegramWeb(username);
 
@@ -154,7 +161,7 @@ function checkUsernameOnTelegramWeb(username) {
         res.on('end', () => {
           const isProfilePage =
             res.statusCode === 200 &&
-            /Telegram:\s*(Contact|View|Channel|Group|Bot)\s+@/i.test(html);
+            /class="tgme_page_(title|extra)"/i.test(html);
 
           done(isProfilePage ? '❌ зайнят' : null);
         });
@@ -224,6 +231,7 @@ function telegramTranslit(text) {
   const unknown = new Set();
   const ukrainian = getUkrainianLetters(lower);
   const keyCount = countTelegramKeys(lower);
+  const hasKsRule = /кс/.test(lower);
 
   // удалить разделители
   lower = lower.replace(/[|•\-:;,/\\]+/g, ' ');
@@ -340,9 +348,11 @@ function telegramTranslit(text) {
 
   return {
     variants,
+    primaryVariant: variants[0] || '',
     unknown: [...unknown],
     ukrainian,
-    keyCount
+    keyCount,
+    hasKsRule
   };
 }
 
@@ -438,13 +448,16 @@ bot.on('text', async (ctx) => {
       : '';
 
     for (const v of result.variants) {
-      const username = toUsernameTitleCase(v);
+      const username = toUsernameTitleCase(normalizeUsername(v));
       const finalUsername = withBot
         ? `${username}bot`
         : username;
       const availability = await checkUsernameAvailability(finalUsername);
+      const ruleMark = result.hasKsRule || v !== result.primaryVariant
+        ? ' ⚡'
+        : '';
 
-      finalMsg += `@${finalUsername}${usernameMarks} | ${availability}\n`;
+      finalMsg += `@${finalUsername}${usernameMarks}${ruleMark} | ${availability}\n`;
     }
 
     finalMsg += '\n';

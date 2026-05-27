@@ -195,7 +195,6 @@ function getHelpText(withBot) {
   return `🔎 Telegram Search Translit
 
 Кожен рядок = окрема задача
-Склеєний текст теж підтримується
 
 Команди:
 /bot - додавати bot
@@ -203,7 +202,7 @@ function getHelpText(withBot) {
 /help - довідка
 
 Поточний режим:
-${withBot ? '✅ + bot' : '✅ без bot'}`;
+${withBot ? '✅ + bot' : '🚫 -  bot'}`;
 }
 
 // Каждое слово с большой буквы
@@ -379,23 +378,23 @@ bot.command('help', (ctx) => {
 
 bot.command('bot', (ctx) => {
   userSettings.set(ctx.from.id, { withBot: true });
-  ctx.reply('✅ Режим: + bot', getKeyboard());
+  ctx.reply('Режим: ✅ bot', getKeyboard());
 });
 
 bot.command('nobot', (ctx) => {
   userSettings.set(ctx.from.id, { withBot: false });
-  ctx.reply('✅ Режим: без bot', getKeyboard());
+  ctx.reply('Режим: 🚫 bot', getKeyboard());
 });
 
 // нижние кнопки
 bot.hears('➕ bot', (ctx) => {
   userSettings.set(ctx.from.id, { withBot: true });
-  ctx.reply('✅ Режим: + bot', getKeyboard());
+  ctx.reply('Режим: ✅ bot', getKeyboard());
 });
 
 bot.hears('🚫 bot', (ctx) => {
   userSettings.set(ctx.from.id, { withBot: false });
-  ctx.reply('✅ Режим: без bot', getKeyboard());
+  ctx.reply('Режим: 🚫 bot', getKeyboard());
 });
 
 bot.on('text', async (ctx) => {

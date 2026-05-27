@@ -152,42 +152,50 @@ bot.start((ctx) => {
   ctx.reply(
 `🔎 Telegram Search Translit
 
-Надішли слово або фразу —
-я покажу username за логікою Telegram search.
+Кожен рядок = окрема задача.
 
 Приклад:
-банк
-ксерокс
-банки`
+Штат
+Завершено
+Репозиторій
+Розгорнуто`
   );
 });
 
-bot.on('text', (ctx) => {
+bot.on('text', async (ctx) => {
   const text = ctx.message.text.trim();
 
   if (!text) {
     return ctx.reply('🤔 Введи текст.');
   }
 
-  const result = telegramTranslit(text);
+  // каждая строка = отдельная задача
+  const lines = text
+    .split('\n')
+    .map(v => v.trim())
+    .filter(Boolean);
 
-  let msg = '';
+  for (const line of lines) {
+    const result = telegramTranslit(line);
 
-  if (result.unknown.length) {
-    msg +=
+    let msg = '';
+
+    if (result.unknown.length) {
+      msg +=
 `⚠️ Невідомі символи:
 ${result.unknown.join(' ')}
 
 `;
+    }
+
+    msg += '🎯 Telegram username:\n\n';
+
+    result.variants.forEach((v) => {
+      msg += `${v}\n`;
+    });
+
+    await ctx.reply(msg);
   }
-
-  msg += '🎯 Telegram username:\n\n';
-
-  result.variants.forEach((v) => {
-    msg += `${v}\n`;
-  });
-
-  ctx.reply(msg);
 });
 
 bot.launch();

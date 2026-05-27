@@ -1,6 +1,9 @@
-const { Telegraf } = require('telegraf');
+const { Telegraf, Markup } = require('telegraf');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
+
+// настройки пользователей
+const userSettings = new Map();
 
 const translitMap = {
   'а':'a',
@@ -38,25 +41,27 @@ const translitMap = {
 };
 
 function telegramTranslit(text) {
-  text = text.toLowerCase();
+  const original = text.toLowerCase();
+  let textWork = original;
 
   const unknown = new Set();
+  const unknownChars = [];
 
   // кс = x
-  text = text.replace(/кс/g, '§');
+  textWork = textWork.replace(/кс/g, '§');
 
   let variants = [''];
 
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
+  for (let i = 0; i < textWork.length; i++) {
+    const ch = textWork[i];
 
-    // placeholder для кс=x
+    // кс=x
     if (ch === '§') {
       variants = variants.map(v => v + 'x');
       continue;
     }
 
-    // пробел -> _
+    // пробел
     if (/\s/.test(ch)) {
       variants = variants.map(v => v + '_');
       continue;
@@ -77,7 +82,7 @@ function telegramTranslit(text) {
 
     // и = i / y если последняя
     if (ch === 'и') {
-      const isLast = i === text.length - 1;
+      const isLast = i === textWork.length - 1;
 
       if (isLast) {
         let next = [];
@@ -97,7 +102,7 @@ function telegramTranslit(text) {
 
     // к = k / x если последняя
     if (ch === 'к') {
-      const isLast = i === text.length - 1;
+      const isLast = i === textWork.length - 1;
 
       if (isLast) {
         let next = [];
@@ -115,7 +120,7 @@ function telegramTranslit(text) {
       continue;
     }
 
-    // обычный словарь
+    // словарь
     if (translitMap.hasOwnProperty(ch)) {
       variants = variants.map(v => v + translitMap[ch]);
       continue;
@@ -127,10 +132,9 @@ function telegramTranslit(text) {
       continue;
     }
 
-    // неизвестные символы
-    if (!/[^\w\s]/.test(ch)) {
-      unknown.add(ch);
-    }
+    // неизвестный символ
+    unknown.add(ch);
+    unknownChars.push(ch);
   }
 
   variants = variants.map(v =>
@@ -142,9 +146,17 @@ function telegramTranslit(text) {
 
   variants = [...new Set(variants)];
 
+  // подсветка в слове
+  let highlighted = text;
+
+  for (const ch of [...unknown]) {
+    highlighted = highlighted.replaceAll(ch, `[${ch}]`);
+  }
+
   return {
     variants,
-    unknown: [...unknown]
+    unknown: [...unknown],
+    highlighted
   };
 }
 
@@ -152,50 +164,97 @@ bot.start((ctx) => {
   ctx.reply(
 `🔎 Telegram Search Translit
 
-Кожен рядок = окрема задача.
+Кожен рядок = окрема задача
+Один результат одним повідомленням
 
-Приклад:
-Штат
-Завершено
-Репозиторій
-Розгорнуто`
+⚙️ /settings — налаштування`
   );
 });
 
-bot.on('text', async (ctx) => {
+// настройки
+bot.command('settings', (ctx) => {
+  const userId = ctx.from.id;
+  const withBot = userSettings.get(userId)?.withBot || false;
+
+  ctx.reply(
+    '⚙️ Налаштування',
+    Markup.inlineKeyboard([
+      [
+        Markup.button.callback(
+          `${!withBot ? '✅' : '⬜'} Без bot`,
+          'mode_nobot'
+        ),
+        Markup.button.callback(
+          `${withBot ? '✅' : '⬜'} bot в кінці`,
+          'mode_bot'
+        )
+      ]
+    ])
+  );
+});
+
+bot.action('mode_nobot', (ctx) => {
+  userSettings.set(ctx.from.id, { withBot: false });
+  ctx.answerCbQuery('Без bot');
+  ctx.editMessageReplyMarkup({
+    inline_keyboard: [
+      [
+        { text: '✅ Без bot', callback_data: 'mode_nobot' },
+        { text: '⬜ bot в кінці', callback_data: 'mode_bot' }
+      ]
+    ]
+  });
+});
+
+bot.action('mode_bot', (ctx) => {
+  userSettings.set(ctx.from.id, { withBot: true });
+  ctx.answerCbQuery('bot в кінці');
+  ctx.editMessageReplyMarkup({
+    inline_keyboard: [
+      [
+        { text: '⬜ Без bot', callback_data: 'mode_nobot' },
+        { text: '✅ bot в кінці', callback_data: 'mode_bot' }
+      ]
+    ]
+  });
+});
+
+bot.on('text', (ctx) => {
   const text = ctx.message.text.trim();
 
   if (!text) {
     return ctx.reply('🤔 Введи текст.');
   }
 
-  // каждая строка = отдельная задача
+  const userId = ctx.from.id;
+  const withBot = userSettings.get(userId)?.withBot || false;
+
   const lines = text
     .split('\n')
     .map(v => v.trim())
     .filter(Boolean);
 
+  let finalMsg = '';
+
   for (const line of lines) {
     const result = telegramTranslit(line);
 
-    let msg = '';
-
     if (result.unknown.length) {
-      msg +=
-`⚠️ Невідомі символи:
-${result.unknown.join(' ')}
-
-`;
+      finalMsg += `${result.highlighted}   ⚠️ ${result.unknown.join(' ')}\n`;
     }
 
-    msg += '🎯 Telegram username:\n\n';
+    result.variants.forEach(v => {
+      finalMsg += `${v}\n`;
 
-    result.variants.forEach((v) => {
-      msg += `${v}\n`;
+      if (withBot) {
+        finalMsg += `${v}bot\n`;
+      }
     });
 
-    await ctx.reply(msg);
+    finalMsg += '\n';
   }
+
+  ctx.reply(finalMsg.trim());
 });
 
 bot.launch();

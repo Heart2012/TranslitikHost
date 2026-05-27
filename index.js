@@ -2,8 +2,8 @@ const { Telegraf, Markup } = require('telegraf');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
-// настройки пользователей
 const userSettings = new Map();
+const MAX_VARIANTS = 50;
 
 const translitMap = {
   'а':'a',
@@ -40,7 +40,6 @@ const translitMap = {
   'ъ':''
 };
 
-// нижние кнопки + сохранение меню
 function getKeyboard() {
   return Markup.keyboard([
     ['➕ bot', '🚫 bot']
@@ -49,9 +48,14 @@ function getKeyboard() {
     .persistent();
 }
 
+function limitVariants(arr) {
+  return arr.length > MAX_VARIANTS
+    ? arr.slice(0, MAX_VARIANTS)
+    : arr;
+}
+
 function telegramTranslit(text) {
-  const original = text.trim();
-  let lower = original.toLowerCase();
+  let lower = text.trim().toLowerCase();
 
   const unknown = new Set();
 
@@ -69,12 +73,14 @@ function telegramTranslit(text) {
     // кс=x
     if (ch === '§') {
       variants = variants.map(v => v + 'x');
+      variants = limitVariants(variants);
       continue;
     }
 
     // пробел -> _
     if (/\s/.test(ch)) {
       variants = variants.map(v => v + '_');
+      variants = limitVariants(variants);
       continue;
     }
 
@@ -87,7 +93,7 @@ function telegramTranslit(text) {
         next.push(v + 'i');
       }
 
-      variants = next;
+      variants = limitVariants(next);
       continue;
     }
 
@@ -103,11 +109,12 @@ function telegramTranslit(text) {
           next.push(v + 'y');
         }
 
-        variants = next;
+        variants = limitVariants(next);
       } else {
         variants = variants.map(v => v + 'i');
       }
 
+      variants = limitVariants(variants);
       continue;
     }
 
@@ -123,27 +130,30 @@ function telegramTranslit(text) {
           next.push(v + 'x');
         }
 
-        variants = next;
+        variants = limitVariants(next);
       } else {
         variants = variants.map(v => v + 'k');
       }
 
+      variants = limitVariants(variants);
       continue;
     }
 
     // словарь
     if (translitMap.hasOwnProperty(ch)) {
       variants = variants.map(v => v + translitMap[ch]);
+      variants = limitVariants(variants);
       continue;
     }
 
     // латиница и цифры
     if (/[a-z0-9]/.test(ch)) {
       variants = variants.map(v => v + ch);
+      variants = limitVariants(variants);
       continue;
     }
 
-    // неизвестные / укр символы
+    // укр/неизвестные
     unknown.add(ch);
   }
 
@@ -155,6 +165,7 @@ function telegramTranslit(text) {
   );
 
   variants = [...new Set(variants)];
+  variants = limitVariants(variants);
 
   return {
     variants,
@@ -162,7 +173,7 @@ function telegramTranslit(text) {
   };
 }
 
-// меню команд Telegram
+// меню команд
 bot.telegram.setMyCommands([
   { command: 'start', description: 'старт' },
   { command: 'bot', description: '+ bot' },
@@ -197,7 +208,6 @@ bot.command('help', (ctx) => {
   );
 });
 
-// команды
 bot.command('bot', (ctx) => {
   userSettings.set(ctx.from.id, { withBot: true });
   ctx.reply('✅ Режим: + bot', getKeyboard());
@@ -226,8 +236,10 @@ bot.on('text', (ctx) => {
     return ctx.reply('🤔 Введи текст.', getKeyboard());
   }
 
-  const withBot = userSettings.get(ctx.from.id)?.withBot || false;
+  const withBot =
+    userSettings.get(ctx.from.id)?.withBot || false;
 
+  // каждая строка = отдельная задача
   const lines = text
     .split('\n')
     .map(v => v.trim())
@@ -243,20 +255,14 @@ bot.on('text', (ctx) => {
 
     let marks = [];
 
-    if (hasUnknown) {
-      marks.push('⚠️');
-    }
+    if (hasUnknown) marks.push('⚠️');
+    if (hasMultiple) marks.push('🔀');
 
-    if (hasMultiple) {
-      marks.push('🔀');
-    }
-
-    // верхняя строка как на скрине
+    // верхняя строка
     if (marks.length) {
       finalMsg += `__${line}__ ${marks.join(' ')}\n`;
     }
 
-    // только +bot или только без bot
     result.variants.forEach(v => {
       finalMsg += withBot
         ? `${v}bot\n`
@@ -264,6 +270,13 @@ bot.on('text', (ctx) => {
     });
 
     finalMsg += '\n';
+  }
+
+  // защита от слишком длинного сообщения
+  if (finalMsg.length > 4000) {
+    finalMsg =
+      finalMsg.slice(0, 3900) +
+      '\n\n⚡ Показано частину результатів';
   }
 
   ctx.reply(finalMsg.trim(), {

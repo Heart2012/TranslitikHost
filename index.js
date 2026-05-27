@@ -314,8 +314,8 @@ bot.on('text', (ctx) => {
 
     result.variants.forEach(v => {
       finalMsg += withBot
-        ? `${v}bot\n`
-        : `${v}\n`;
+        ? `@${v}bot\n`
+        : `@${v}\n`;
     });
 
     finalMsg += '\n';

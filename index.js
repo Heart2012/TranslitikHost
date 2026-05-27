@@ -100,12 +100,12 @@ function toUsernameTitleCase(username) {
 async function checkUsernameAvailability(username) {
   try {
     await bot.telegram.getChat(`@${username}`);
-    return '❌ занят';
+    return '❌ зайнят';
   } catch (err) {
     const description = err?.response?.description || err?.description || err?.message || '';
 
     if (/chat not found/i.test(description)) {
-      return '✅ возможно свободен';
+      return '✅ вільний';
     }
 
     console.error(`Failed to check @${username}:`, err);
@@ -387,7 +387,7 @@ bot.on('text', async (ctx) => {
         : username;
       const availability = await checkUsernameAvailability(finalUsername);
 
-      finalMsg += `@${finalUsername}${usernameMarks} ${availability}\n`;
+      finalMsg += `@${finalUsername}${usernameMarks} | ${availability}\n`;
     }
 
     finalMsg += '\n';

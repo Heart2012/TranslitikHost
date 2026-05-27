@@ -6,38 +6,13 @@ const userSettings = new Map();
 const MAX_VARIANTS = 50;
 
 const translitMap = {
-  'а':'a',
-  'б':'b',
-  'в':'v',
-  'г':'g',
-  'д':'d',
-  'е':'e',
-  'ё':'e',
-  'ж':'zh',
-  'з':'z',
-  'и':'i',
-  'к':'k',
-  'л':'l',
-  'м':'m',
-  'н':'n',
-  'о':'o',
-  'п':'p',
-  'р':'r',
-  'с':'s',
-  'т':'t',
-  'у':'u',
-  'ф':'f',
-  'х':'kh',
-  'ц':'ts',
-  'ч':'ch',
-  'ш':'sh',
-  'щ':'shch',
-  'ы':'y',
-  'э':'e',
-  'ю':'yu',
-  'я':'ya',
-  'ь':'',
-  'ъ':''
+  'а':'a','б':'b','в':'v','г':'g','д':'d',
+  'е':'e','ё':'e','ж':'zh','з':'z','и':'i',
+  'к':'k','л':'l','м':'m','н':'n','о':'o',
+  'п':'p','р':'r','с':'s','т':'t','у':'u',
+  'ф':'f','х':'kh','ц':'ts','ч':'ch',
+  'ш':'sh','щ':'shch','ы':'y','э':'e',
+  'ю':'yu','я':'ya','ь':'','ъ':''
 };
 
 function getKeyboard() {
@@ -54,7 +29,12 @@ function limitVariants(arr) {
     : arr;
 }
 
-// исправлённое разделение склеенного текста
+// escape markdownV2
+function escapeMd(text) {
+  return text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
+}
+
+// разделение склеенного текста
 function splitTasks(text) {
   return text
     .replace(/Новини(?=[А-ЯІЇЄҐ])/g, 'Новини\n')
@@ -213,14 +193,6 @@ ${withBot ? '✅ + bot' : '✅ без bot'}`,
   );
 });
 
-bot.command('help', (ctx) => {
-  ctx.reply(
-`/bot — тільки + bot
-/nobot — тільки без bot`,
-    getKeyboard()
-  );
-});
-
 bot.command('bot', (ctx) => {
   userSettings.set(ctx.from.id, { withBot: true });
   ctx.reply('✅ Режим: + bot', getKeyboard());
@@ -252,7 +224,6 @@ bot.on('text', (ctx) => {
   const withBot =
     userSettings.get(ctx.from.id)?.withBot || false;
 
-  // каждая строка = отдельная задача
   const lines = splitTasks(text);
 
   let finalMsg = '';
@@ -271,14 +242,15 @@ bot.on('text', (ctx) => {
     if (hasUnknown) marks.push('⚠️');
     if (hasMultiple) marks.push('🔀');
 
+    // ПОДЧЁРКНУТОЕ исходное слово
     if (marks.length) {
-      finalMsg += `${line} ${marks.join(' ')}\n`;
+      finalMsg += `__${escapeMd(line)}__ ${marks.join(' ')}\n`;
     }
 
     result.variants.forEach(v => {
       finalMsg += withBot
-        ? `${v}bot\n`
-        : `${v}\n`;
+        ? `${escapeMd(v)}bot\n`
+        : `${escapeMd(v)}\n`;
     });
 
     finalMsg += '\n';
@@ -291,6 +263,7 @@ bot.on('text', (ctx) => {
   }
 
   ctx.reply(finalMsg.trim(), {
+    parse_mode: 'MarkdownV2',
     ...getKeyboard()
   });
 });

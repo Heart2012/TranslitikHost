@@ -40,6 +40,15 @@ const translitMap = {
   'ъ':''
 };
 
+// нижние кнопки + сохранение меню
+function getKeyboard() {
+  return Markup.keyboard([
+    ['➕ bot', '🚫 bot']
+  ])
+    .resize()
+    .persistent();
+}
+
 function telegramTranslit(text) {
   const original = text.trim();
   let lower = original.toLowerCase();
@@ -153,19 +162,13 @@ function telegramTranslit(text) {
   };
 }
 
-// меню команд
+// меню команд Telegram
 bot.telegram.setMyCommands([
   { command: 'start', description: 'старт' },
   { command: 'bot', description: '+ bot' },
   { command: 'nobot', description: 'без bot' },
   { command: 'help', description: 'довідка' }
 ]);
-
-function getKeyboard() {
-  return Markup.keyboard([
-    ['➕ bot', '🚫 bot']
-  ]).resize();
-}
 
 bot.start((ctx) => {
   const withBot = userSettings.get(ctx.from.id)?.withBot || false;
@@ -248,7 +251,7 @@ bot.on('text', (ctx) => {
       marks.push('🔀');
     }
 
-    // верхняя строка
+    // верхняя строка как на скрине
     if (marks.length) {
       finalMsg += `__${line}__ ${marks.join(' ')}\n`;
     }

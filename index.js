@@ -54,6 +54,21 @@ function limitVariants(arr) {
     : arr;
 }
 
+// авто-разделение склеенного текста
+function splitTasks(text) {
+  return text
+    // НовиниЛьвів -> Новини\nЛьвів
+    .replace(/([а-яіїєґa-z])([А-ЯІЇЄҐ]{2,}|[А-ЯІЇЄҐ][а-яіїєґ])/g, '$1\n$2')
+    // | Новини
+    .replace(/\|\s*Новини/gi, '| Новини\n')
+    // • Новини
+    .replace(/•\s*Новини/gi, '• Новини\n')
+    // убрать лишние переносы
+    .split('\n')
+    .map(v => v.trim())
+    .filter(Boolean);
+}
+
 function telegramTranslit(text) {
   let lower = text.trim().toLowerCase();
 
@@ -70,17 +85,17 @@ function telegramTranslit(text) {
   for (let i = 0; i < lower.length; i++) {
     const ch = lower[i];
 
-    // кс=x
     if (ch === '§') {
-      variants = variants.map(v => v + 'x');
-      variants = limitVariants(variants);
+      variants = limitVariants(
+        variants.map(v => v + 'x')
+      );
       continue;
     }
 
-    // пробел -> _
     if (/\s/.test(ch)) {
-      variants = variants.map(v => v + '_');
-      variants = limitVariants(variants);
+      variants = limitVariants(
+        variants.map(v => v + '_')
+      );
       continue;
     }
 
@@ -111,10 +126,11 @@ function telegramTranslit(text) {
 
         variants = limitVariants(next);
       } else {
-        variants = variants.map(v => v + 'i');
+        variants = limitVariants(
+          variants.map(v => v + 'i')
+        );
       }
 
-      variants = limitVariants(variants);
       continue;
     }
 
@@ -132,28 +148,28 @@ function telegramTranslit(text) {
 
         variants = limitVariants(next);
       } else {
-        variants = variants.map(v => v + 'k');
+        variants = limitVariants(
+          variants.map(v => v + 'k')
+        );
       }
 
-      variants = limitVariants(variants);
       continue;
     }
 
-    // словарь
-    if (translitMap.hasOwnProperty(ch)) {
-      variants = variants.map(v => v + translitMap[ch]);
-      variants = limitVariants(variants);
+    if (translitMap[ch]) {
+      variants = limitVariants(
+        variants.map(v => v + translitMap[ch])
+      );
       continue;
     }
 
-    // латиница и цифры
     if (/[a-z0-9]/.test(ch)) {
-      variants = variants.map(v => v + ch);
-      variants = limitVariants(variants);
+      variants = limitVariants(
+        variants.map(v => v + ch)
+      );
       continue;
     }
 
-    // укр/неизвестные
     unknown.add(ch);
   }
 
@@ -173,7 +189,7 @@ function telegramTranslit(text) {
   };
 }
 
-// меню команд
+// команды
 bot.telegram.setMyCommands([
   { command: 'start', description: 'старт' },
   { command: 'bot', description: '+ bot' },
@@ -182,13 +198,14 @@ bot.telegram.setMyCommands([
 ]);
 
 bot.start((ctx) => {
-  const withBot = userSettings.get(ctx.from.id)?.withBot || false;
+  const withBot =
+    userSettings.get(ctx.from.id)?.withBot || false;
 
   ctx.reply(
 `🔎 Telegram Search Translit
 
 Кожен рядок = окрема задача
-Один результат одним повідомленням
+Склеєний текст теж підтримується
 
 Поточний режим:
 ${withBot ? '✅ + bot' : '✅ без bot'}`,
@@ -198,12 +215,8 @@ ${withBot ? '✅ + bot' : '✅ без bot'}`,
 
 bot.command('help', (ctx) => {
   ctx.reply(
-`Команди:
-
-/bot — тільки + bot
-/nobot — тільки без bot
-
-Кожен рядок = окрема задача`,
+`/bot — тільки + bot
+/nobot — тільки без bot`,
     getKeyboard()
   );
 });
@@ -239,28 +252,28 @@ bot.on('text', (ctx) => {
   const withBot =
     userSettings.get(ctx.from.id)?.withBot || false;
 
-  // каждая строка = отдельная задача
-  const lines = text
-    .split('\n')
-    .map(v => v.trim())
-    .filter(Boolean);
+  // каждая задача отдельно
+  const lines = splitTasks(text);
 
   let finalMsg = '';
 
   for (const line of lines) {
     const result = telegramTranslit(line);
 
-    const hasUnknown = result.unknown.length > 0;
-    const hasMultiple = result.variants.length > 1;
+    const hasUnknown =
+      result.unknown.length > 0;
+
+    const hasMultiple =
+      result.variants.length > 1;
 
     let marks = [];
 
     if (hasUnknown) marks.push('⚠️');
     if (hasMultiple) marks.push('🔀');
 
-    // верхняя строка
     if (marks.length) {
-      finalMsg += `__${line}__ ${marks.join(' ')}\n`;
+      finalMsg +=
+        `__${line}__ ${marks.join(' ')}\n`;
     }
 
     result.variants.forEach(v => {
@@ -272,7 +285,6 @@ bot.on('text', (ctx) => {
     finalMsg += '\n';
   }
 
-  // защита от слишком длинного сообщения
   if (finalMsg.length > 4000) {
     finalMsg =
       finalMsg.slice(0, 3900) +

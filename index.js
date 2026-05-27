@@ -1,4 +1,4 @@
-const { Telegraf, Markup } = require('telegraf');
+const { Telegraf } = require('telegraf');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
@@ -41,19 +41,18 @@ const translitMap = {
 };
 
 function telegramTranslit(text) {
-  const original = text.toLowerCase();
-  let textWork = original;
+  const original = text.trim();
+  const lower = original.toLowerCase();
 
   const unknown = new Set();
-  const unknownChars = [];
 
-  // кс = x
-  textWork = textWork.replace(/кс/g, '§');
+  // кс=x
+  const prepared = lower.replace(/кс/g, '§');
 
   let variants = [''];
 
-  for (let i = 0; i < textWork.length; i++) {
-    const ch = textWork[i];
+  for (let i = 0; i < prepared.length; i++) {
+    const ch = prepared[i];
 
     // кс=x
     if (ch === '§') {
@@ -82,7 +81,7 @@ function telegramTranslit(text) {
 
     // и = i / y если последняя
     if (ch === 'и') {
-      const isLast = i === textWork.length - 1;
+      const isLast = i === prepared.length - 1;
 
       if (isLast) {
         let next = [];
@@ -102,7 +101,7 @@ function telegramTranslit(text) {
 
     // к = k / x если последняя
     if (ch === 'к') {
-      const isLast = i === textWork.length - 1;
+      const isLast = i === prepared.length - 1;
 
       if (isLast) {
         let next = [];
@@ -120,7 +119,7 @@ function telegramTranslit(text) {
       continue;
     }
 
-    // словарь
+    // обычный словарь
     if (translitMap.hasOwnProperty(ch)) {
       variants = variants.map(v => v + translitMap[ch]);
       continue;
@@ -132,9 +131,8 @@ function telegramTranslit(text) {
       continue;
     }
 
-    // неизвестный символ
+    // неизвестные / укр символы
     unknown.add(ch);
-    unknownChars.push(ch);
   }
 
   variants = variants.map(v =>
@@ -146,77 +144,57 @@ function telegramTranslit(text) {
 
   variants = [...new Set(variants)];
 
-  // подсветка в слове
-  let highlighted = text;
-
-  for (const ch of [...unknown]) {
-    highlighted = highlighted.replaceAll(ch, `[${ch}]`);
-  }
-
   return {
     variants,
-    unknown: [...unknown],
-    highlighted
+    unknown: [...unknown]
   };
 }
 
+// меню команд Telegram
+bot.telegram.setMyCommands([
+  { command: 'start', description: 'старт' },
+  { command: 'bot', description: 'bot в кінці' },
+  { command: 'nobot', description: 'без bot' },
+  { command: 'help', description: 'довідка' }
+]);
+
 bot.start((ctx) => {
+  const withBot = userSettings.get(ctx.from.id)?.withBot || false;
+
   ctx.reply(
 `🔎 Telegram Search Translit
 
 Кожен рядок = окрема задача
 Один результат одним повідомленням
 
-⚙️ /settings — налаштування`
+Поточний режим:
+${withBot ? '✅ bot в кінці' : '✅ без bot'}
+
+Команди:
+/bot
+/nobot`
   );
 });
 
-// настройки
-bot.command('settings', (ctx) => {
-  const userId = ctx.from.id;
-  const withBot = userSettings.get(userId)?.withBot || false;
-
+bot.command('help', (ctx) => {
   ctx.reply(
-    '⚙️ Налаштування',
-    Markup.inlineKeyboard([
-      [
-        Markup.button.callback(
-          `${!withBot ? '✅' : '⬜'} Без bot`,
-          'mode_nobot'
-        ),
-        Markup.button.callback(
-          `${withBot ? '✅' : '⬜'} bot в кінці`,
-          'mode_bot'
-        )
-      ]
-    ])
+`Команди:
+
+/bot — тільки bot варіанти
+/nobot — тільки без bot
+
+Кожен рядок = окрема задача`
   );
 });
 
-bot.action('mode_nobot', (ctx) => {
-  userSettings.set(ctx.from.id, { withBot: false });
-  ctx.answerCbQuery('Без bot');
-  ctx.editMessageReplyMarkup({
-    inline_keyboard: [
-      [
-        { text: '✅ Без bot', callback_data: 'mode_nobot' },
-        { text: '⬜ bot в кінці', callback_data: 'mode_bot' }
-      ]
-    ]
-  });
+bot.command('bot', (ctx) => {
+  userSettings.set(ctx.from.id, { withBot: true });
+  ctx.reply('✅ Режим: bot в кінці');
 });
 
-bot.action('mode_bot', (ctx) => {
-  userSettings.set(ctx.from.id, { withBot: true });
-  ctx.answerCbQuery('bot в кінці');
-  ctx.editMessageReplyMarkup({
-    inline_keyboard: [
-      [
-        { text: '⬜ Без bot', callback_data: 'mode_nobot' },
-        { text: '✅ bot в кінці', callback_data: 'mode_bot' }
-      ]
-    ]
-  });
+bot.command('nobot', (ctx) => {
+  userSettings.set(ctx.from.id, { withBot: false });
+  ctx.reply('✅ Режим: без bot');
 });
 
 bot.on('text', (ctx) => {
@@ -226,8 +204,7 @@ bot.on('text', (ctx) => {
     return ctx.reply('🤔 Введи текст.');
   }
 
-  const userId = ctx.from.id;
-  const withBot = userSettings.get(userId)?.withBot || false;
+  const withBot = userSettings.get(ctx.from.id)?.withBot || false;
 
   const lines = text
     .split('\n')
@@ -239,22 +216,39 @@ bot.on('text', (ctx) => {
   for (const line of lines) {
     const result = telegramTranslit(line);
 
-    if (result.unknown.length) {
-      finalMsg += `${result.highlighted}   ⚠️ ${result.unknown.join(' ')}\n`;
+    const hasUnknown = result.unknown.length > 0;
+    const hasMultiple = result.variants.length > 1;
+
+    let marks = [];
+
+    if (hasUnknown) {
+      marks.push('⚠️');
     }
 
-    result.variants.forEach(v => {
-      finalMsg += `${v}\n`;
+    if (hasMultiple) {
+      marks.push('🔀');
+    }
 
+    // верхняя строка
+    if (marks.length) {
+      finalMsg += `__${line}__ ${marks.join(' ')}\n`;
+    }
+
+    // варианты
+    result.variants.forEach(v => {
       if (withBot) {
         finalMsg += `${v}bot\n`;
+      } else {
+        finalMsg += `${v}\n`;
       }
     });
 
     finalMsg += '\n';
   }
 
-  ctx.reply(finalMsg.trim());
+  ctx.reply(finalMsg.trim(), {
+    parse_mode: 'Markdown'
+  });
 });
 
 bot.launch();

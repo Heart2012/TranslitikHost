@@ -14,6 +14,7 @@ bot.catch((err, ctx) => {
 
 const userSettings = new Map();
 const MAX_VARIANTS = 50;
+const UKRAINIAN_LETTERS = new Set(['і', 'ї', 'є', 'ґ']);
 
 const translitMap = {
   'а':'a',
@@ -77,6 +78,32 @@ function escapeHtml(text) {
     .replace(/>/g, '&gt;');
 }
 
+function getUkrainianLetters(text) {
+  const found = new Set();
+
+  for (const ch of text.toLowerCase()) {
+    if (UKRAINIAN_LETTERS.has(ch)) {
+      found.add(ch);
+    }
+  }
+
+  return [...found];
+}
+
+function countTelegramKeys(text) {
+  const words = text
+    .toLowerCase()
+    .split(/[\s_.\-:;,/\\|•]+/)
+    .filter(Boolean);
+
+  const shortWords = words.filter(word => /^[a-zа-яіїєґ]{2}$/iu.test(word)).length;
+  const longKeys = words.filter(word =>
+    word.length >= 3 || /^[a-zа-яіїєґ]{2}\d+$/iu.test(word)
+  ).length;
+
+  return longKeys + Math.floor(shortWords / 4);
+}
+
 function getHelpText(withBot) {
   return `🔎 Telegram Search Translit
 
@@ -115,6 +142,8 @@ function telegramTranslit(text) {
   let lower = text.trim().toLowerCase();
 
   const unknown = new Set();
+  const ukrainian = getUkrainianLetters(lower);
+  const keyCount = countTelegramKeys(lower);
 
   // удалить разделители
   lower = lower.replace(/[|•\-:;,/\\]+/g, ' ');
@@ -231,7 +260,9 @@ function telegramTranslit(text) {
 
   return {
     variants,
-    unknown: [...unknown]
+    unknown: [...unknown],
+    ukrainian,
+    keyCount
   };
 }
 
@@ -302,9 +333,17 @@ bot.on('text', (ctx) => {
     const hasMultiple =
       result.variants.length > 1;
 
+    const hasUkrainian =
+      result.ukrainian.length > 0;
+
+    const hasTooManyKeys =
+      result.keyCount > 5;
+
     let marks = [];
 
     if (hasUnknown) marks.push('⚠️');
+    if (hasUkrainian) marks.push(`🇺🇦 ${result.ukrainian.join(', ')}`);
+    if (hasTooManyKeys) marks.push(`5️⃣ ${result.keyCount} ключей`);
     if (hasMultiple) marks.push('🔀');
 
     // подчеркнутый заголовок

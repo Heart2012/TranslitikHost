@@ -14,6 +14,7 @@ bot.catch((err, ctx) => {
 
 const userSettings = new Map();
 const MAX_VARIANTS = 50;
+const UKRAINIAN_LETTERS = new Set(['і', 'ї', 'є', 'ґ']);
 
 const translitMap = {
   'а':'a',
@@ -95,9 +96,25 @@ ${withBot ? '✅ + bot' : '✅ без bot'}`;
 // Каждое слово с большой буквы
 function toTitleCase(text) {
   return text.replace(
-    /\b([а-яіїєґa-z])/gi,
-    c => c.toUpperCase()
+    /(^|[\s_.\-:;,/\\|•]+)([а-яіїєґa-z])/giu,
+    (_, separator, letter) => separator + letter.toUpperCase()
   );
+}
+
+function getUkrainianLetters(text) {
+  const found = new Set();
+
+  for (const ch of text.toLowerCase()) {
+    if (UKRAINIAN_LETTERS.has(ch)) {
+      found.add(ch);
+    }
+  }
+
+  return [...found];
+}
+
+function formatUsername(username, withBot) {
+  return `@${username}${withBot ? 'bot' : ''}`;
 }
 
 // Разделение склеенного текста
@@ -115,6 +132,7 @@ function telegramTranslit(text) {
   let lower = text.trim().toLowerCase();
 
   const unknown = new Set();
+  const ukrainian = getUkrainianLetters(lower);
 
   // удалить разделители
   lower = lower.replace(/[|•\-:;,/\\]+/g, ' ');
@@ -231,7 +249,8 @@ function telegramTranslit(text) {
 
   return {
     variants,
-    unknown: [...unknown]
+    unknown: [...unknown],
+    ukrainian
   };
 }
 
@@ -302,20 +321,23 @@ bot.on('text', (ctx) => {
     const hasMultiple =
       result.variants.length > 1;
 
+    const hasUkrainian =
+      result.ukrainian.length > 0;
+
     let marks = [];
 
     if (hasUnknown) marks.push('⚠️');
+    if (hasUkrainian) marks.push(`🇺🇦 ${result.ukrainian.join(', ')}`);
     if (hasMultiple) marks.push('🔀');
 
-    // подчеркнутый заголовок
-    if (marks.length) {
-      finalMsg += `<u>${escapeHtml(line)}</u> ${marks.join(' ')}\n`;
-    }
-
     result.variants.forEach(v => {
-      finalMsg += withBot
-        ? `@${v}bot\n`
-        : `@${v}\n`;
+      finalMsg += `${escapeHtml(line)}`;
+
+      if (marks.length) {
+        finalMsg += ` ${marks.join(' ')}`;
+      }
+
+      finalMsg += `\n${formatUsername(v, withBot)}\n`;
     });
 
     finalMsg += '\n';

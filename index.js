@@ -42,17 +42,20 @@ const translitMap = {
 
 function telegramTranslit(text) {
   const original = text.trim();
-  const lower = original.toLowerCase();
+  let lower = original.toLowerCase();
 
   const unknown = new Set();
 
+  // удалить разделители (вариант 2)
+  lower = lower.replace(/[|•\-:;,/\\]+/g, ' ');
+
   // кс=x
-  const prepared = lower.replace(/кс/g, '§');
+  lower = lower.replace(/кс/g, '§');
 
   let variants = [''];
 
-  for (let i = 0; i < prepared.length; i++) {
-    const ch = prepared[i];
+  for (let i = 0; i < lower.length; i++) {
+    const ch = lower[i];
 
     // кс=x
     if (ch === '§') {
@@ -60,7 +63,7 @@ function telegramTranslit(text) {
       continue;
     }
 
-    // пробел
+    // пробел -> _
     if (/\s/.test(ch)) {
       variants = variants.map(v => v + '_');
       continue;
@@ -81,7 +84,7 @@ function telegramTranslit(text) {
 
     // и = i / y если последняя
     if (ch === 'и') {
-      const isLast = i === prepared.length - 1;
+      const isLast = i === lower.length - 1;
 
       if (isLast) {
         let next = [];
@@ -101,7 +104,7 @@ function telegramTranslit(text) {
 
     // к = k / x если последняя
     if (ch === 'к') {
-      const isLast = i === prepared.length - 1;
+      const isLast = i === lower.length - 1;
 
       if (isLast) {
         let next = [];
@@ -119,7 +122,7 @@ function telegramTranslit(text) {
       continue;
     }
 
-    // обычный словарь
+    // словарь
     if (translitMap.hasOwnProperty(ch)) {
       variants = variants.map(v => v + translitMap[ch]);
       continue;
@@ -150,7 +153,7 @@ function telegramTranslit(text) {
   };
 }
 
-// меню команд Telegram
+// команды Telegram
 bot.telegram.setMyCommands([
   { command: 'start', description: 'старт' },
   { command: 'bot', description: 'bot в кінці' },
@@ -168,11 +171,7 @@ bot.start((ctx) => {
 Один результат одним повідомленням
 
 Поточний режим:
-${withBot ? '✅ bot в кінці' : '✅ без bot'}
-
-Команди:
-/bot
-/nobot`
+${withBot ? '✅ bot' : '✅ без bot'}`
   );
 });
 
@@ -180,7 +179,7 @@ bot.command('help', (ctx) => {
   ctx.reply(
 `Команди:
 
-/bot — тільки bot варіанти
+/bot — тільки bot
 /nobot — тільки без bot
 
 Кожен рядок = окрема задача`
@@ -189,12 +188,12 @@ bot.command('help', (ctx) => {
 
 bot.command('bot', (ctx) => {
   userSettings.set(ctx.from.id, { withBot: true });
-  ctx.reply('✅ Режим: bot в кінці');
+  ctx.reply('✅ Режим: тільки bot');
 });
 
 bot.command('nobot', (ctx) => {
   userSettings.set(ctx.from.id, { withBot: false });
-  ctx.reply('✅ Режим: без bot');
+  ctx.reply('✅ Режим: тільки без bot');
 });
 
 bot.on('text', (ctx) => {
@@ -229,18 +228,16 @@ bot.on('text', (ctx) => {
       marks.push('🔀');
     }
 
-    // верхняя строка
+    // верхняя строка как на скрине
     if (marks.length) {
       finalMsg += `__${line}__ ${marks.join(' ')}\n`;
     }
 
-    // варианты
+    // только bot или только без bot
     result.variants.forEach(v => {
-      if (withBot) {
-        finalMsg += `${v}bot\n`;
-      } else {
-        finalMsg += `${v}\n`;
-      }
+      finalMsg += withBot
+        ? `${v}bot\n`
+        : `${v}\n`;
     });
 
     finalMsg += '\n';

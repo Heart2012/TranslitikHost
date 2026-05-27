@@ -1,6 +1,12 @@
 const { Telegraf, Markup } = require('telegraf');
 
-const bot = new Telegraf(process.env.BOT_TOKEN);
+const BOT_TOKEN = process.env.BOT_TOKEN;
+
+if (!BOT_TOKEN) {
+  throw new Error('BOT_TOKEN is required. Set it in environment variables.');
+}
+
+const bot = new Telegraf(BOT_TOKEN);
 
 const userSettings = new Map();
 const MAX_VARIANTS = 50;
@@ -10,12 +16,16 @@ const translitMap = {
   'б':'b',
   'в':'v',
   'г':'g',
+  'ґ':'g',
   'д':'d',
   'е':'e',
+  'є':'ye',
   'ё':'e',
   'ж':'zh',
   'з':'z',
   'и':'i',
+  'і':'i',
+  'ї':'yi',
   'к':'k',
   'л':'l',
   'м':'m',
@@ -37,7 +47,9 @@ const translitMap = {
   'ю':'yu',
   'я':'ya',
   'ь':'',
-  'ъ':''
+  'ъ':'',
+  '’':'',
+  '\'':''
 };
 
 function getKeyboard() {
@@ -52,6 +64,28 @@ function limitVariants(arr) {
   return arr.length > MAX_VARIANTS
     ? arr.slice(0, MAX_VARIANTS)
     : arr;
+}
+
+function escapeHtml(text) {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function getHelpText(withBot) {
+  return `🔎 Telegram Search Translit
+
+Кожен рядок = окрема задача
+Склеєний текст теж підтримується
+
+Команди:
+/bot - додавати bot
+/nobot - без bot
+/help - довідка
+
+Поточний режим:
+${withBot ? '✅ + bot' : '✅ без bot'}`;
 }
 
 // Каждое слово с большой буквы
@@ -162,7 +196,7 @@ function telegramTranslit(text) {
     }
 
     // словарь
-    if (translitMap[ch]) {
+    if (Object.prototype.hasOwnProperty.call(translitMap, ch)) {
       variants = limitVariants(
         variants.map(v => v + translitMap[ch])
       );
@@ -209,16 +243,14 @@ bot.start((ctx) => {
   const withBot =
     userSettings.get(ctx.from.id)?.withBot || false;
 
-  ctx.reply(
-`🔎 Telegram Search Translit
+  ctx.reply(getHelpText(withBot), getKeyboard());
+});
 
-Кожен рядок = окрема задача
-Склеєний текст теж підтримується
+bot.command('help', (ctx) => {
+  const withBot =
+    userSettings.get(ctx.from.id)?.withBot || false;
 
-Поточний режим:
-${withBot ? '✅ + bot' : '✅ без bot'}`,
-    getKeyboard()
-  );
+  ctx.reply(getHelpText(withBot), getKeyboard());
 });
 
 bot.command('bot', (ctx) => {
@@ -274,7 +306,7 @@ bot.on('text', (ctx) => {
 
     // подчеркнутый заголовок
     if (marks.length) {
-      finalMsg += `__${line}__ ${marks.join(' ')}\n`;
+      finalMsg += `<u>${escapeHtml(line)}</u> ${marks.join(' ')}\n`;
     }
 
     result.variants.forEach(v => {
@@ -293,7 +325,7 @@ bot.on('text', (ctx) => {
   }
 
   ctx.reply(finalMsg.trim(), {
-    parse_mode: 'Markdown',
+    parse_mode: 'HTML',
     ...getKeyboard()
   });
 });

@@ -15,6 +15,8 @@ bot.catch((err, ctx) => {
 
 const userSettings = new Map();
 const MAX_VARIANTS = 50;
+const MAX_USERNAME_LENGTH = 32;
+const UA_MARK = '🔅';
 const UKRAINIAN_LETTERS = new Set(['і', 'ї', 'є', 'ґ']);
 
 const translitMap = {
@@ -103,6 +105,21 @@ function normalizeUsername(username) {
     .replace(/[^a-z0-9_]/gi, '_')
     .replace(/_+/g, '_')
     .replace(/^_+|_+$/g, '');
+}
+
+function normalizeDisplayUsername(username) {
+  return username
+    .replace(new RegExp(`[^a-z0-9_${UA_MARK}]`, 'giu'), '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function getUkrainianWarning(letters) {
+  if (!letters.length) {
+    return '';
+  }
+
+  return `⚠️ UA-символы: ${letters.map(letter => letter.toUpperCase()).join(', ')} → ${UA_MARK}`;
 }
 
 async function checkUsernameAvailability(username) {
@@ -238,14 +255,17 @@ function telegramTranslit(text) {
   // кс=x
   lower = lower.replace(/кс/g, '§');
 
-  let variants = [''];
+  let variants = [{ value: '', display: '' }];
 
   for (let i = 0; i < lower.length; i++) {
     const ch = lower[i];
 
     if (ch === '§') {
       variants = limitVariants(
-        variants.map(v => v + 'x')
+        variants.map(v => ({
+          value: v.value + 'x',
+          display: v.display + 'x'
+        }))
       );
       continue;
     }
@@ -253,7 +273,10 @@ function telegramTranslit(text) {
     // пробел -> _
     if (/\s/.test(ch)) {
       variants = limitVariants(
-        variants.map(v => v + '_')
+        variants.map(v => ({
+          value: v.value + '_',
+          display: v.display + '_'
+        }))
       );
       continue;
     }
@@ -263,8 +286,8 @@ function telegramTranslit(text) {
       let next = [];
 
       for (const v of variants) {
-        next.push(v + 'y');
-        next.push(v + 'i');
+        next.push({ value: v.value + 'y', display: v.display + 'y' });
+        next.push({ value: v.value + 'i', display: v.display + 'i' });
       }
 
       variants = limitVariants(next);
@@ -279,14 +302,17 @@ function telegramTranslit(text) {
         let next = [];
 
         for (const v of variants) {
-          next.push(v + 'i');
-          next.push(v + 'y');
+          next.push({ value: v.value + 'i', display: v.display + 'i' });
+          next.push({ value: v.value + 'y', display: v.display + 'y' });
         }
 
         variants = limitVariants(next);
       } else {
         variants = limitVariants(
-          variants.map(v => v + 'i')
+          variants.map(v => ({
+            value: v.value + 'i',
+            display: v.display + 'i'
+          }))
         );
       }
 
@@ -301,14 +327,17 @@ function telegramTranslit(text) {
         let next = [];
 
         for (const v of variants) {
-          next.push(v + 'k');
-          next.push(v + 'x');
+          next.push({ value: v.value + 'k', display: v.display + 'k' });
+          next.push({ value: v.value + 'x', display: v.display + 'x' });
         }
 
         variants = limitVariants(next);
       } else {
         variants = limitVariants(
-          variants.map(v => v + 'k')
+          variants.map(v => ({
+            value: v.value + 'k',
+            display: v.display + 'k'
+          }))
         );
       }
 
@@ -317,8 +346,14 @@ function telegramTranslit(text) {
 
     // словарь
     if (Object.prototype.hasOwnProperty.call(translitMap, ch)) {
+      const value = translitMap[ch];
+      const display = UKRAINIAN_LETTERS.has(ch) ? UA_MARK : value;
+
       variants = limitVariants(
-        variants.map(v => v + translitMap[ch])
+        variants.map(v => ({
+          value: v.value + value,
+          display: v.display + display
+        }))
       );
       continue;
     }
@@ -326,7 +361,10 @@ function telegramTranslit(text) {
     // латиница / цифры
     if (/[a-z0-9]/.test(ch)) {
       variants = limitVariants(
-        variants.map(v => v + ch)
+        variants.map(v => ({
+          value: v.value + ch,
+          display: v.display + ch
+        }))
       );
       continue;
     }
@@ -335,19 +373,32 @@ function telegramTranslit(text) {
     unknown.add(ch);
   }
 
-  variants = variants.map(v =>
-    v
+  variants = variants.map(v => ({
+    value: v.value
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .toLowerCase(),
+    display: v.display
       .replace(/_+/g, '_')
       .replace(/^_+|_+$/g, '')
       .toLowerCase()
-  );
+  }));
 
-  variants = [...new Set(variants)];
+  const seen = new Set();
+  variants = variants.filter((v) => {
+    if (seen.has(v.value)) {
+      return false;
+    }
+
+    seen.add(v.value);
+    return true;
+  });
   variants = limitVariants(variants);
 
   return {
-    variants,
-    primaryVariant: variants[0] || '',
+    variants: variants.map(v => v.value),
+    displayVariants: variants.map(v => v.display),
+    primaryVariant: variants[0]?.value || '',
     unknown: [...unknown],
     ukrainian,
     keyCount,
@@ -442,21 +493,32 @@ bot.on('text', async (ctx) => {
 
     finalMsg += '\n';
 
-    const usernameMarks = hasUkrainian
-      ? ` 🇺🇦 ${result.ukrainian.join(', ')}`
-      : '';
+    const ukrainianWarning = getUkrainianWarning(result.ukrainian);
 
-    for (const v of result.variants) {
+    if (ukrainianWarning) {
+      finalMsg += `${ukrainianWarning}\n`;
+    }
+
+    for (let index = 0; index < result.variants.length; index++) {
+      const v = result.variants[index];
+      const displayVariant = result.displayVariants[index] || v;
       const username = toUsernameTitleCase(normalizeUsername(v));
+      const displayUsername = toUsernameTitleCase(normalizeDisplayUsername(displayVariant));
       const finalUsername = withBot
         ? `${username}bot`
         : username;
+      const finalDisplayUsername = withBot
+        ? `${displayUsername}bot`
+        : displayUsername;
       const availability = await checkUsernameAvailability(finalUsername);
       const ruleMark = result.hasKsRule || v !== result.primaryVariant
         ? ' ⚡'
         : '';
+      const lengthMark = finalUsername.length > MAX_USERNAME_LENGTH
+        ? ` ⚠️ ${finalUsername.length}/${MAX_USERNAME_LENGTH}`
+        : '';
 
-      finalMsg += `@${finalUsername}${usernameMarks}${ruleMark} | ${availability}\n`;
+      finalMsg += `@${finalDisplayUsername}${ruleMark}${lengthMark} | ${availability}\n`;
     }
 
     finalMsg += '\n';

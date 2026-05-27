@@ -1,4 +1,4 @@
-const { Telegraf } = require('telegraf');
+const { Telegraf, Markup } = require('telegraf');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
@@ -46,7 +46,7 @@ function telegramTranslit(text) {
 
   const unknown = new Set();
 
-  // удалить разделители (вариант 2)
+  // удалить разделители
   lower = lower.replace(/[|•\-:;,/\\]+/g, ' ');
 
   // кс=x
@@ -153,13 +153,19 @@ function telegramTranslit(text) {
   };
 }
 
-// команды Telegram
+// меню команд
 bot.telegram.setMyCommands([
   { command: 'start', description: 'старт' },
-  { command: 'bot', description: 'bot в кінці' },
+  { command: 'bot', description: '+ bot' },
   { command: 'nobot', description: 'без bot' },
   { command: 'help', description: 'довідка' }
 ]);
+
+function getKeyboard() {
+  return Markup.keyboard([
+    ['➕ bot', '🚫 bot']
+  ]).resize();
+}
 
 bot.start((ctx) => {
   const withBot = userSettings.get(ctx.from.id)?.withBot || false;
@@ -171,7 +177,8 @@ bot.start((ctx) => {
 Один результат одним повідомленням
 
 Поточний режим:
-${withBot ? '✅ bot' : '✅ без bot'}`
+${withBot ? '✅ + bot' : '✅ без bot'}`,
+    getKeyboard()
   );
 });
 
@@ -179,28 +186,41 @@ bot.command('help', (ctx) => {
   ctx.reply(
 `Команди:
 
-/bot — тільки bot
+/bot — тільки + bot
 /nobot — тільки без bot
 
-Кожен рядок = окрема задача`
+Кожен рядок = окрема задача`,
+    getKeyboard()
   );
 });
 
+// команды
 bot.command('bot', (ctx) => {
   userSettings.set(ctx.from.id, { withBot: true });
-  ctx.reply('✅ Режим: тільки bot');
+  ctx.reply('✅ Режим: + bot', getKeyboard());
 });
 
 bot.command('nobot', (ctx) => {
   userSettings.set(ctx.from.id, { withBot: false });
-  ctx.reply('✅ Режим: тільки без bot');
+  ctx.reply('✅ Режим: без bot', getKeyboard());
+});
+
+// нижние кнопки
+bot.hears('➕ bot', (ctx) => {
+  userSettings.set(ctx.from.id, { withBot: true });
+  ctx.reply('✅ Режим: + bot', getKeyboard());
+});
+
+bot.hears('🚫 bot', (ctx) => {
+  userSettings.set(ctx.from.id, { withBot: false });
+  ctx.reply('✅ Режим: без bot', getKeyboard());
 });
 
 bot.on('text', (ctx) => {
   const text = ctx.message.text.trim();
 
   if (!text) {
-    return ctx.reply('🤔 Введи текст.');
+    return ctx.reply('🤔 Введи текст.', getKeyboard());
   }
 
   const withBot = userSettings.get(ctx.from.id)?.withBot || false;
@@ -228,12 +248,12 @@ bot.on('text', (ctx) => {
       marks.push('🔀');
     }
 
-    // верхняя строка как на скрине
+    // верхняя строка
     if (marks.length) {
       finalMsg += `__${line}__ ${marks.join(' ')}\n`;
     }
 
-    // только bot или только без bot
+    // только +bot или только без bot
     result.variants.forEach(v => {
       finalMsg += withBot
         ? `${v}bot\n`
@@ -244,7 +264,8 @@ bot.on('text', (ctx) => {
   }
 
   ctx.reply(finalMsg.trim(), {
-    parse_mode: 'Markdown'
+    parse_mode: 'Markdown',
+    ...getKeyboard()
   });
 });
 

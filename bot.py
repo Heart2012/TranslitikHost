@@ -5,8 +5,8 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.utils.executor import start_webhook
 from aiohttp import web
 
-# 🔐 Токен і URL з Render → Environment
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+# 🔐 Токен і URL з Render → Environment BOT_TOKEN
+BOT_TOKEN = os.getenv("8638610424:AAEHB7HmoPAwyOhwFbohff1aApOAtJfySFg")
 WEBAPP_HOST = "0.0.0.0"
 WEBAPP_PORT = int(os.getenv("PORT", 10000))
 APP_URL = os.getenv("RENDER_EXTERNAL_URL")  # Автоматично задається Render

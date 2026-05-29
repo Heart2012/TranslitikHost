@@ -14,50 +14,20 @@ bot.catch((err, ctx) => {
 });
 
 const userSettings = new Map();
+
 const MAX_VARIANTS = 50;
 const MAX_USERNAME_LENGTH = 32;
 const UA_MARK = '🔅';
 const UKRAINIAN_LETTERS = new Set(['і', 'ї', 'є', 'ґ']);
 
 const translitMap = {
-  'а':'a',
-  'б':'b',
-  'в':'v',
-  'г':'g',
-  'ґ':'g',
-  'д':'d',
-  'е':'e',
-  'є':'ye',
-  'ё':'e',
-  'ж':'zh',
-  'з':'z',
-  'и':'i',
-  'і':'i',
-  'ї':'yi',
-  'к':'k',
-  'л':'l',
-  'м':'m',
-  'н':'n',
-  'о':'o',
-  'п':'p',
-  'р':'r',
-  'с':'s',
-  'т':'t',
-  'у':'u',
-  'ф':'f',
-  'х':'kh',
-  'ц':'ts',
-  'ч':'ch',
-  'ш':'sh',
-  'щ':'shch',
-  'ы':'y',
-  'э':'e',
-  'ю':'yu',
-  'я':'ya',
-  'ь':'',
-  'ъ':'',
-  '’':'',
-  '\'':''
+  'а':'a','б':'b','в':'v','г':'g','ґ':'g','д':'d','е':'e',
+  'є':'ye','ё':'e','ж':'zh','з':'z','и':'i','і':'i',
+  'ї':'yi','к':'k','л':'l','м':'m','н':'n','о':'o',
+  'п':'p','р':'r','с':'s','т':'t','у':'u','ф':'f',
+  'х':'kh','ц':'ts','ч':'ch','ш':'sh','щ':'shch',
+  'ы':'y','э':'e','ю':'yu','я':'ya',
+  'ь':'','ъ':'','’':'','\'':''
 };
 
 function getKeyboard() {
@@ -76,9 +46,9 @@ function limitVariants(arr) {
 
 function escapeHtml(text) {
   return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;');
 }
 
 function getUkrainianLetters(text) {
@@ -96,57 +66,34 @@ function getUkrainianLetters(text) {
 function toUsernameTitleCase(username) {
   return username.replace(
     /(^|_)([a-z])/g,
-    (_, separator, letter) => separator + letter.toUpperCase()
+    (_, sep, letter) => sep + letter.toUpperCase()
   );
 }
 
 function normalizeUsername(username) {
   return username
-    .replace(/[^a-z0-9_]/gi, '_')
-    .replace(/_+/g, '_')
-    .replace(/^_+|_+$/g, '');
+    .replace(/[^a-z0-9_]/gi,'_')
+    .replace(/_+/g,'_')
+    .replace(/^_+|_+$/g,'');
 }
 
 function normalizeDisplayUsername(username) {
   return username
-    .replace(new RegExp(`[^a-z0-9_${UA_MARK}]`, 'giu'), '_')
-    .replace(/_+/g, '_')
-    .replace(/^_+|_+$/g, '');
+    .replace(new RegExp(`[^a-z0-9_${UA_MARK}]`, 'giu'),'_')
+    .replace(/_+/g,'_')
+    .replace(/^_+|_+$/g,'');
 }
 
 function getUkrainianWarning(letters) {
-  if (!letters.length) {
-    return '';
-  }
+  if (!letters.length) return '';
 
-  return `⚠️ UA-символы: ${letters.map(letter => letter.toUpperCase()).join(', ')} → ${UA_MARK}`;
-}
-
-async function checkUsernameAvailability(username) {
-  const webStatus = await checkUsernameOnTelegramWeb(username);
-
-  if (webStatus) {
-    return webStatus;
-  }
-
-  try {
-    await bot.telegram.getChat(`@${username}`);
-    return '❌ зайнято';
-  } catch (err) {
-    const description = err?.response?.description || err?.description || err?.message || '';
-
-    if (/chat not found/i.test(description)) {
-      return '✅ вільно';
-    }
-
-    console.error(`Failed to check @${username}:`, err);
-    return '? не проверено';
-  }
+  return `⚠️ UA-символы: ${letters.map(v => v.toUpperCase()).join(', ')} → ${UA_MARK}`;
 }
 
 function checkUsernameOnTelegramWeb(username) {
   return new Promise((resolve) => {
     let settled = false;
+
     const done = (status) => {
       if (!settled) {
         settled = true;
@@ -157,9 +104,10 @@ function checkUsernameOnTelegramWeb(username) {
     const req = https.get(
       `https://t.me/${encodeURIComponent(username)}`,
       (res) => {
+
         const location = res.headers.location || '';
 
-        if ([301, 302, 303, 307, 308].includes(res.statusCode)) {
+        if ([301,302,303,307,308].includes(res.statusCode)) {
           done(location.includes('telegram.org') ? '✅ вільно' : null);
           res.resume();
           return;
@@ -168,13 +116,17 @@ function checkUsernameOnTelegramWeb(username) {
         let html = '';
 
         res.setEncoding('utf8');
+
         res.on('data', (chunk) => {
           html += chunk;
 
           if (html.length > 50000) {
             res.destroy();
+            done(null);
+            return;
           }
         });
+
         res.on('end', () => {
           const isProfilePage =
             res.statusCode === 200 &&
@@ -182,16 +134,45 @@ function checkUsernameOnTelegramWeb(username) {
 
           done(isProfilePage ? '❌ зайнято' : null);
         });
+
         res.on('error', () => done(null));
       }
     );
 
-    req.setTimeout(7000, () => {
+    req.setTimeout(4000, () => {
       req.destroy();
       done(null);
     });
+
     req.on('error', () => done(null));
   });
+}
+
+async function checkUsernameAvailability(username) {
+  const webStatus =
+    await checkUsernameOnTelegramWeb(username);
+
+  if (webStatus) {
+    return webStatus;
+  }
+
+  try {
+    await bot.telegram.getChat(`@${username}`);
+    return '❌ зайнято';
+  } catch (err) {
+    const description =
+      err?.response?.description ||
+      err?.description ||
+      err?.message ||
+      '';
+
+    if (/chat not found/i.test(description)) {
+      return '✅ вільно';
+    }
+
+    console.error(`Failed check @${username}`, err);
+    return '? не проверено';
+  }
 }
 
 function countTelegramKeys(text) {
@@ -200,10 +181,16 @@ function countTelegramKeys(text) {
     .split(/[\s_.\-:;,/\\|•]+/)
     .filter(Boolean);
 
-  const shortWords = words.filter(word => /^[a-zа-яіїєґ]{2}$/iu.test(word)).length;
-  const longKeys = words.filter(word =>
-    word.length >= 3 || /^[a-zа-яіїєґ]{2}\d+$/iu.test(word)
-  ).length;
+  const shortWords =
+    words.filter(v =>
+      /^[a-zа-яіїєґ]{2}$/iu.test(v)
+    ).length;
+
+  const longKeys =
+    words.filter(v =>
+      v.length >= 3 ||
+      /^[a-zа-яіїєґ]{2}\d+$/iu.test(v)
+    ).length;
 
   return longKeys + Math.floor(shortWords / 4);
 }
@@ -214,34 +201,33 @@ function getHelpText(withBot) {
 Кожен рядок = окрема задача
 
 Команди:
-/bot - додавати bot
-/nobot - без bot
-/help - довідка
+/bot
+/nobot
+/help
 
 Поточний режим:
-${withBot ? '✅ + bot' : '🚫 -  bot'}`;
+${withBot ? '✅ + bot' : '🚫 - bot'}`;
 }
 
-// Каждое слово с большой буквы
 function toTitleCase(text) {
   return text.replace(
     /(^|[\s_.\-:;,/\\|•]+)([а-яіїєґa-z])/giu,
-    (_, separator, letter) => separator + letter.toUpperCase()
+    (_, sep, letter) => sep + letter.toUpperCase()
   );
 }
 
-// Разделение склеенного текста
 function splitTasks(text) {
   return text
-    .replace(/Новини(?=[А-ЯІЇЄҐ])/g, 'Новини\n')
-    .replace(/Лева(?=[А-ЯІЇЄҐ])/g, 'Лева\n')
-    .replace(/•\s*Новини/gi, '• Новини\n')
+    .replace(/Новини(?=[А-ЯІЇЄҐ])/g,'Новини\n')
+    .replace(/Лева(?=[А-ЯІЇЄҐ])/g,'Лева\n')
+    .replace(/•\s*Новини/gi,'• Новини\n')
     .split('\n')
     .map(v => v.trim())
     .filter(Boolean);
 }
 
 function telegramTranslit(text) {
+
   let lower = text.trim().toLowerCase();
 
   const unknown = new Set();
@@ -249,15 +235,13 @@ function telegramTranslit(text) {
   const keyCount = countTelegramKeys(lower);
   const hasKsRule = /кс/.test(lower);
 
-  // удалить разделители
-  lower = lower.replace(/[|•\-:;,/\\]+/g, ' ');
+  lower = lower.replace(/[|•\-:;,/\\]+/g,' ');
+  lower = lower.replace(/кс/g,'§');
 
-  // кс=x
-  lower = lower.replace(/кс/g, '§');
+  let variants = [{ value:'', display:'' }];
 
-  let variants = [{ value: '', display: '' }];
+  for (let i=0;i<lower.length;i++) {
 
-  for (let i = 0; i < lower.length; i++) {
     const ch = lower[i];
 
     if (ch === '§') {
@@ -270,7 +254,6 @@ function telegramTranslit(text) {
       continue;
     }
 
-    // пробел -> _
     if (/\s/.test(ch)) {
       variants = limitVariants(
         variants.map(v => ({
@@ -281,73 +264,33 @@ function telegramTranslit(text) {
       continue;
     }
 
-    // й = y / i
     if (ch === 'й') {
+
       let next = [];
 
       for (const v of variants) {
-        next.push({ value: v.value + 'y', display: v.display + 'y' });
-        next.push({ value: v.value + 'i', display: v.display + 'i' });
+        next.push({
+          value: v.value + 'y',
+          display: v.display + 'y'
+        });
+
+        next.push({
+          value: v.value + 'i',
+          display: v.display + 'i'
+        });
       }
 
       variants = limitVariants(next);
       continue;
     }
 
-    // и = i / y если последняя
-    if (ch === 'и') {
-      const isLast = i === lower.length - 1;
-
-      if (isLast) {
-        let next = [];
-
-        for (const v of variants) {
-          next.push({ value: v.value + 'i', display: v.display + 'i' });
-          next.push({ value: v.value + 'y', display: v.display + 'y' });
-        }
-
-        variants = limitVariants(next);
-      } else {
-        variants = limitVariants(
-          variants.map(v => ({
-            value: v.value + 'i',
-            display: v.display + 'i'
-          }))
-        );
-      }
-
-      continue;
-    }
-
-    // к = k / x если последняя
-    if (ch === 'к') {
-      const isLast = i === lower.length - 1;
-
-      if (isLast) {
-        let next = [];
-
-        for (const v of variants) {
-          next.push({ value: v.value + 'k', display: v.display + 'k' });
-          next.push({ value: v.value + 'x', display: v.display + 'x' });
-        }
-
-        variants = limitVariants(next);
-      } else {
-        variants = limitVariants(
-          variants.map(v => ({
-            value: v.value + 'k',
-            display: v.display + 'k'
-          }))
-        );
-      }
-
-      continue;
-    }
-
-    // словарь
     if (Object.prototype.hasOwnProperty.call(translitMap, ch)) {
+
       const value = translitMap[ch];
-      const display = UKRAINIAN_LETTERS.has(ch) ? UA_MARK : value;
+      const display =
+        UKRAINIAN_LETTERS.has(ch)
+          ? UA_MARK
+          : value;
 
       variants = limitVariants(
         variants.map(v => ({
@@ -355,10 +298,10 @@ function telegramTranslit(text) {
           display: v.display + display
         }))
       );
+
       continue;
     }
 
-    // латиница / цифры
     if (/[a-z0-9]/.test(ch)) {
       variants = limitVariants(
         variants.map(v => ({
@@ -369,37 +312,34 @@ function telegramTranslit(text) {
       continue;
     }
 
-    // неизвестные / укр
     unknown.add(ch);
   }
 
   variants = variants.map(v => ({
     value: v.value
-      .replace(/_+/g, '_')
-      .replace(/^_+|_+$/g, '')
+      .replace(/_+/g,'_')
+      .replace(/^_+|_+$/g,'')
       .toLowerCase(),
+
     display: v.display
-      .replace(/_+/g, '_')
-      .replace(/^_+|_+$/g, '')
+      .replace(/_+/g,'_')
+      .replace(/^_+|_+$/g,'')
       .toLowerCase()
   }));
 
   const seen = new Set();
-  variants = variants.filter((v) => {
-    if (seen.has(v.value)) {
-      return false;
-    }
 
+  variants = variants.filter(v => {
+    if (seen.has(v.value)) return false;
     seen.add(v.value);
     return true;
   });
-  variants = limitVariants(variants);
 
   return {
     variants: variants.map(v => v.value),
     displayVariants: variants.map(v => v.display),
     primaryVariant: variants[0]?.value || '',
-    unknown: [...unknown],
+    unknown:[...unknown],
     ukrainian,
     keyCount,
     hasKsRule
@@ -407,147 +347,153 @@ function telegramTranslit(text) {
 }
 
 const commands = [
-  { command: 'start', description: 'старт' },
-  { command: 'bot', description: '+ bot' },
-  { command: 'nobot', description: 'без bot' },
-  { command: 'help', description: 'довідка' }
+  { command:'start', description:'старт' },
+  { command:'bot', description:'+ bot' },
+  { command:'nobot', description:'без bot' },
+  { command:'help', description:'довідка' }
 ];
 
-bot.start((ctx) => {
+bot.start(ctx => {
   const withBot =
     userSettings.get(ctx.from.id)?.withBot || false;
 
   ctx.reply(getHelpText(withBot), getKeyboard());
 });
 
-bot.command('help', (ctx) => {
+bot.command('help', ctx => {
   const withBot =
     userSettings.get(ctx.from.id)?.withBot || false;
 
   ctx.reply(getHelpText(withBot), getKeyboard());
 });
 
-bot.command('bot', (ctx) => {
-  userSettings.set(ctx.from.id, { withBot: true });
+bot.command('bot', ctx => {
+  userSettings.set(ctx.from.id,{ withBot:true });
   ctx.reply('Режим: ✅ bot', getKeyboard());
 });
 
-bot.command('nobot', (ctx) => {
-  userSettings.set(ctx.from.id, { withBot: false });
+bot.command('nobot', ctx => {
+  userSettings.set(ctx.from.id,{ withBot:false });
   ctx.reply('Режим: 🚫 bot', getKeyboard());
 });
 
-// нижние кнопки
-bot.hears('➕ bot', (ctx) => {
-  userSettings.set(ctx.from.id, { withBot: true });
+bot.hears('➕ bot', ctx => {
+  userSettings.set(ctx.from.id,{ withBot:true });
   ctx.reply('Режим: ✅ bot', getKeyboard());
 });
 
-bot.hears('🚫 bot', (ctx) => {
-  userSettings.set(ctx.from.id, { withBot: false });
+bot.hears('🚫 bot', ctx => {
+  userSettings.set(ctx.from.id,{ withBot:false });
   ctx.reply('Режим: 🚫 bot', getKeyboard());
 });
 
 bot.on('text', async (ctx) => {
-  const text = ctx.message.text.trim();
 
-  if (!text) {
-    return ctx.reply('🤔 Введи текст.', getKeyboard());
-  }
+  const waitMsg =
+    await ctx.reply('⏳ Перевіряю...', getKeyboard());
 
-  const withBot =
-    userSettings.get(ctx.from.id)?.withBot || false;
+  try {
 
-  const lines = splitTasks(text);
+    const text =
+      ctx.message.text.trim();
 
-  let finalMsg = '';
+    const withBot =
+      userSettings.get(ctx.from.id)?.withBot || false;
 
-  for (const rawLine of lines) {
-    const line = toTitleCase(rawLine);
+    const lines =
+      splitTasks(text);
 
-    const result = telegramTranslit(line);
+    let finalMsg = '';
 
-    const hasUnknown =
-      result.unknown.length > 0;
+    for (const rawLine of lines) {
 
-    const hasMultiple =
-      result.variants.length > 1;
+      const line =
+        toTitleCase(rawLine);
 
-    const hasUkrainian =
-      result.ukrainian.length > 0;
+      const result =
+        telegramTranslit(line);
 
-    const hasTooManyKeys =
-      result.keyCount > 5;
+      finalMsg += `<u>${escapeHtml(line)}</u>\n`;
 
-    let marks = [];
+      const checks =
+        await Promise.all(
+          result.variants.map(async (v, index) => {
 
-    if (hasUnknown) marks.push('⚠️');
-    if (hasTooManyKeys) marks.push(`5️⃣ ${result.keyCount} ключей`);
-    if (hasMultiple) marks.push('🔀');
+            const username =
+              withBot
+                ? `${toUsernameTitleCase(normalizeUsername(v))}bot`
+                : toUsernameTitleCase(normalizeUsername(v));
 
-    finalMsg += `<u>${escapeHtml(line)}</u>`;
+            const display =
+              withBot
+                ? `${toUsernameTitleCase(normalizeDisplayUsername(result.displayVariants[index]))}bot`
+                : toUsernameTitleCase(normalizeDisplayUsername(result.displayVariants[index]));
 
-    if (marks.length) {
-      finalMsg += ` ${marks.join(' ')}`;
+            const availability =
+              await checkUsernameAvailability(username);
+
+            return `@${display} | ${availability}`;
+          })
+        );
+
+      finalMsg += checks.join('\n');
+      finalMsg += '\n\n';
     }
 
-    finalMsg += '\n';
-
-    const ukrainianWarning = getUkrainianWarning(result.ukrainian);
-
-    if (ukrainianWarning) {
-      finalMsg += `${ukrainianWarning}\n`;
+    if (finalMsg.length > 4000) {
+      finalMsg =
+        finalMsg.slice(0,3900) +
+        '\n\n⚡ Показано частину';
     }
 
-    for (let index = 0; index < result.variants.length; index++) {
-      const v = result.variants[index];
-      const displayVariant = result.displayVariants[index] || v;
-      const username = toUsernameTitleCase(normalizeUsername(v));
-      const displayUsername = toUsernameTitleCase(normalizeDisplayUsername(displayVariant));
-      const finalUsername = withBot
-        ? `${username}bot`
-        : username;
-      const finalDisplayUsername = withBot
-        ? `${displayUsername}bot`
-        : displayUsername;
-      const availability = await checkUsernameAvailability(finalUsername);
-      const ruleMark = result.hasKsRule || v !== result.primaryVariant
-        ? ' ⚡'
-        : '';
-      const lengthMark = finalUsername.length > MAX_USERNAME_LENGTH
-        ? ` ⚠️ ${finalUsername.length}/${MAX_USERNAME_LENGTH}`
-        : '';
+    await ctx.telegram.deleteMessage(
+      ctx.chat.id,
+      waitMsg.message_id
+    );
 
-      finalMsg += `@${finalDisplayUsername}${ruleMark}${lengthMark} | ${availability}\n`;
-    }
+    await ctx.reply(
+      finalMsg.trim(),
+      {
+        parse_mode:'HTML',
+        ...getKeyboard()
+      }
+    );
 
-    finalMsg += '\n';
+  } catch (err) {
+
+    console.error(err);
+
+    try {
+      await ctx.reply(
+        '⚠️ Помилка обробки'
+      );
+    } catch {}
   }
 
-  if (finalMsg.length > 4000) {
-    finalMsg =
-      finalMsg.slice(0, 3900) +
-      '\n\n⚡ Показано частину результатів';
-  }
-
-  ctx.reply(finalMsg.trim(), {
-    parse_mode: 'HTML',
-    ...getKeyboard()
-  });
 });
 
 async function startBot() {
-  await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+  await bot.telegram.deleteWebhook({
+    drop_pending_updates:true
+  });
+
   await bot.telegram.setMyCommands(commands);
   await bot.launch();
 
-  console.log('Telegram Search Bot started');
+  console.log('Bot started');
 }
 
-startBot().catch((err) => {
-  console.error('Failed to start Telegram bot:', err);
+startBot().catch(err => {
+  console.error(err);
   process.exit(1);
 });
 
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+process.once(
+  'SIGINT',
+  () => bot.stop('SIGINT')
+);
+
+process.once(
+  'SIGTERM',
+  () => bot.stop('SIGTERM')
+);

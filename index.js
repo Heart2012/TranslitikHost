@@ -14,6 +14,19 @@ bot.catch((err, ctx) => {
 });
 
 const userSettings = new Map();
+const MAX_TRACKED_USERS = 10000;
+
+// Periodic process diagnostics make memory growth and unexpected exits easier to investigate.
+setInterval(() => {
+  const memory = process.memoryUsage();
+  console.log(JSON.stringify({
+    event: 'health',
+    uptimeSeconds: Math.round(process.uptime()),
+    heapUsedMB: Math.round(memory.heapUsed / 1024 / 1024),
+    rssMB: Math.round(memory.rss / 1024 / 1024),
+    trackedUsers: userSettings.size
+  }));
+}, 5 * 60 * 1000).unref();
 const MAX_VARIANTS = 50;
 const MAX_USERNAME_LENGTH = 32;
 const UA_MARK = '🔅';
@@ -147,6 +160,7 @@ async function checkUsernameAvailability(username) {
 function checkUsernameOnTelegramWeb(username) {
   return new Promise((resolve) => {
     let settled = false;
+    let req;
     const done = (status) => {
       if (!settled) {
         settled = true;
@@ -154,43 +168,64 @@ function checkUsernameOnTelegramWeb(username) {
       }
     };
 
-    const req = https.get(
-      `https://t.me/${encodeURIComponent(username)}`,
-      (res) => {
-        const location = res.headers.location || '';
-
-        if ([301, 302, 303, 307, 308].includes(res.statusCode)) {
-          done(location.includes('telegram.org') ? '✅ вільно' : null);
-          res.resume();
-          return;
-        }
-
-        let html = '';
-
-        res.setEncoding('utf8');
-        res.on('data', (chunk) => {
-          html += chunk;
-
-          if (html.length > 50000) {
-            res.destroy();
-          }
-        });
-        res.on('end', () => {
-          const isProfilePage =
-            res.statusCode === 200 &&
-            /class="tgme_page_(title|extra)"/i.test(html);
-
-          done(isProfilePage ? '❌ зайнято' : null);
-        });
-        res.on('error', () => done(null));
-      }
-    );
-
-    req.setTimeout(7000, () => {
-      req.destroy();
+    const timer = setTimeout(() => {
+      try { req?.destroy(); } catch (_) {}
       done(null);
-    });
-    req.on('error', () => done(null));
+    }, 5000);
+
+    try {
+      req = https.get(
+        `https://t.me/${encodeURIComponent(username)}`,
+        (res) => {
+          const location = res.headers.location || '';
+
+          if ([301, 302, 303, 307, 308].includes(res.statusCode)) {
+            clearTimeout(timer);
+            done(location.includes('telegram.org') ? '✅ вільно' : null);
+            res.resume();
+            return;
+          }
+
+          let html = '';
+          res.setEncoding('utf8');
+
+          res.on('data', (chunk) => {
+            html += chunk;
+            if (html.length > 50000) {
+              clearTimeout(timer);
+              res.destroy();
+              done(null);
+            }
+          });
+
+          res.on('end', () => {
+            clearTimeout(timer);
+            const isProfilePage =
+              res.statusCode === 200 &&
+              /class="tgme_page_(title|extra)"/i.test(html);
+            done(isProfilePage ? '❌ зайнято' : null);
+          });
+
+          res.on('aborted', () => {
+            clearTimeout(timer);
+            done(null);
+          });
+          res.on('error', () => {
+            clearTimeout(timer);
+            done(null);
+          });
+        }
+      );
+
+      req.on('error', () => {
+        clearTimeout(timer);
+        done(null);
+      });
+    } catch (err) {
+      clearTimeout(timer);
+      console.error('Telegram web check failed:', err.message);
+      done(null);
+    }
   });
 }
 
@@ -428,12 +463,12 @@ bot.command('help', (ctx) => {
 });
 
 bot.command('bot', (ctx) => {
-  userSettings.set(ctx.from.id, { withBot: true });
+  if (userSettings.size < MAX_TRACKED_USERS || userSettings.has(ctx.from.id)) userSettings.set(ctx.from.id, { withBot: true });
   ctx.reply('Режим: ✅ bot', getKeyboard());
 });
 
 bot.command('nobot', (ctx) => {
-  userSettings.set(ctx.from.id, { withBot: false });
+  if (userSettings.size < MAX_TRACKED_USERS || userSettings.has(ctx.from.id)) userSettings.set(ctx.from.id, { withBot: false });
   ctx.reply('Режим: 🚫 bot', getKeyboard());
 });
 
@@ -449,91 +484,114 @@ bot.hears('🚫 bot', (ctx) => {
 });
 
 bot.on('text', async (ctx) => {
-  const text = ctx.message.text.trim();
+  const startedAt = Date.now();
+  const updateId = ctx.update?.update_id;
+  const userId = ctx.from?.id;
 
-  if (!text) {
-    return ctx.reply('🤔 Введи текст.', getKeyboard());
-  }
+  try {
+    const text = (ctx.message.text || '').trim();
 
-  const withBot =
-    userSettings.get(ctx.from.id)?.withBot || false;
-
-  const lines = splitTasks(text);
-
-  let finalMsg = '';
-
-  for (const rawLine of lines) {
-    const line = toTitleCase(rawLine);
-
-    const result = telegramTranslit(line);
-
-    const hasUnknown =
-      result.unknown.length > 0;
-
-    const hasMultiple =
-      result.variants.length > 1;
-
-    const hasUkrainian =
-      result.ukrainian.length > 0;
-
-    const hasTooManyKeys =
-      result.keyCount > 5;
-
-    let marks = [];
-
-    if (hasUnknown) marks.push('⚠️');
-    if (hasTooManyKeys) marks.push(`5️⃣ ${result.keyCount} ключей`);
-    if (hasMultiple) marks.push('🔀');
-
-    finalMsg += `<u>${escapeHtml(line)}</u>`;
-
-    if (marks.length) {
-      finalMsg += ` ${marks.join(' ')}`;
+    if (!text) {
+      await ctx.reply('🤔 Введи текст.', getKeyboard());
+      return;
     }
 
-    finalMsg += '\n';
+    const withBot = userSettings.get(userId)?.withBot || false;
+    const allLines = splitTasks(text);
+    const MAX_LINES_PER_MESSAGE = 12;
+    const lines = allLines.slice(0, MAX_LINES_PER_MESSAGE);
+    let finalMsg = '';
+    let checks = 0;
 
-    const ukrainianWarning = getUkrainianWarning(result.ukrainian);
+    for (const rawLine of lines) {
+      const line = toTitleCase(rawLine);
+      const result = telegramTranslit(line);
+      const hasUnknown = result.unknown.length > 0;
+      const hasMultiple = result.variants.length > 1;
+      const hasTooManyKeys = result.keyCount > 5;
+      const marks = [];
 
-    if (ukrainianWarning) {
-      finalMsg += `${ukrainianWarning}\n`;
+      if (hasUnknown) marks.push('⚠️');
+      if (hasTooManyKeys) marks.push(`5️⃣ ${result.keyCount} ключей`);
+      if (hasMultiple) marks.push('🔀');
+
+      finalMsg += `<u>${escapeHtml(line)}</u>`;
+      if (marks.length) finalMsg += ` ${marks.join(' ')}`;
+      finalMsg += '\n';
+
+      const ukrainianWarning = getUkrainianWarning(result.ukrainian);
+      if (ukrainianWarning) finalMsg += `${ukrainianWarning}\n`;
+
+      for (let index = 0; index < result.variants.length; index++) {
+        const v = result.variants[index];
+        const displayVariant = result.displayVariants[index] || v;
+        const username = toUsernameTitleCase(normalizeUsername(v));
+        const displayUsername = toUsernameTitleCase(normalizeDisplayUsername(displayVariant));
+        const finalUsername = withBot ? `${username}bot` : username;
+        const finalDisplayUsername = withBot ? `${displayUsername}bot` : displayUsername;
+
+        let availability;
+        try {
+          availability = await checkUsernameAvailability(finalUsername);
+        } catch (err) {
+          console.error('Username availability check failed:', {
+            username: finalUsername,
+            message: err?.message,
+            code: err?.code
+          });
+          availability = '? не перевірено';
+        }
+        checks++;
+
+        const ruleMark = result.hasKsRule || v !== result.primaryVariant ? ' ⚡' : '';
+        const lengthMark = finalUsername.length > MAX_USERNAME_LENGTH
+          ? ` ⚠️ ${finalUsername.length}/${MAX_USERNAME_LENGTH}`
+          : '';
+
+        finalMsg += `@${displayUsername === '' ? finalDisplayUsername : finalDisplayUsername}${ruleMark}${lengthMark} | ${availability}\n`;
+      }
+      finalMsg += '\n';
     }
 
-    for (let index = 0; index < result.variants.length; index++) {
-      const v = result.variants[index];
-      const displayVariant = result.displayVariants[index] || v;
-      const username = toUsernameTitleCase(normalizeUsername(v));
-      const displayUsername = toUsernameTitleCase(normalizeDisplayUsername(displayVariant));
-      const finalUsername = withBot
-        ? `${username}bot`
-        : username;
-      const finalDisplayUsername = withBot
-        ? `${displayUsername}bot`
-        : displayUsername;
-      const availability = await checkUsernameAvailability(finalUsername);
-      const ruleMark = result.hasKsRule || v !== result.primaryVariant
-        ? ' ⚡'
-        : '';
-      const lengthMark = finalUsername.length > MAX_USERNAME_LENGTH
-        ? ` ⚠️ ${finalUsername.length}/${MAX_USERNAME_LENGTH}`
-        : '';
-
-      finalMsg += `@${finalDisplayUsername}${ruleMark}${lengthMark} | ${availability}\n`;
+    if (allLines.length > MAX_LINES_PER_MESSAGE) {
+      finalMsg += `\n⚠️ Оброблено перші ${MAX_LINES_PER_MESSAGE} рядків із ${allLines.length}. Надішли решту окремо.\n`;
     }
 
-    finalMsg += '\n';
-  }
+    if (finalMsg.length > 3900) {
+      finalMsg = finalMsg.slice(0, 3700) + '\n\n⚡ Результат скорочено через обмеження Telegram.';
+    }
 
-  if (finalMsg.length > 4000) {
-    finalMsg =
-      finalMsg.slice(0, 3900) +
-      '\n\n⚡ Показано частину результатів';
-  }
+    await ctx.reply(finalMsg.trim() || 'Не вдалося сформувати результат.', {
+      parse_mode: 'HTML',
+      ...getKeyboard()
+    });
 
-  ctx.reply(finalMsg.trim(), {
-    parse_mode: 'HTML',
-    ...getKeyboard()
-  });
+    console.log(JSON.stringify({
+      event: 'message_processed',
+      updateId,
+      userId,
+      lines: lines.length,
+      checks,
+      durationMs: Date.now() - startedAt,
+      heapUsedMB: Math.round(process.memoryUsage().heapUsed / 1024 / 1024)
+    }));
+  } catch (err) {
+    console.error(JSON.stringify({
+      event: 'message_handler_error',
+      updateId,
+      userId,
+      durationMs: Date.now() - startedAt,
+      message: err?.message,
+      code: err?.code,
+      stack: err?.stack
+    }));
+
+    try {
+      await ctx.reply('⚠️ Сталася помилка під час обробки. Спробуй надіслати менший список.');
+    } catch (replyErr) {
+      console.error('Could not send error reply:', replyErr?.message, replyErr?.code);
+    }
+  }
 });
 
 async function startBot() {
@@ -541,7 +599,12 @@ async function startBot() {
   await bot.telegram.setMyCommands(commands);
   await bot.launch();
 
-  console.log('Telegram Search Bot started');
+  console.log(JSON.stringify({
+    event: 'bot_started',
+    node: process.version,
+    pid: process.pid,
+    uptimeSeconds: Math.round(process.uptime())
+  }));
 }
 
 startBot().catch((err) => {
@@ -549,5 +612,25 @@ startBot().catch((err) => {
   process.exit(1);
 });
 
+process.on('uncaughtException', (err) => {
+  console.error(JSON.stringify({
+    event: 'uncaught_exception',
+    message: err?.message,
+    stack: err?.stack
+  }));
+  // Let the hosting platform restart a process in an unknown state.
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error(JSON.stringify({
+    event: 'unhandled_rejection',
+    reason: reason?.stack || reason?.message || String(reason)
+  }));
+});
+
 process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+process.once('SIGTERM', () => {
+  console.log(JSON.stringify({ event: 'shutdown_signal', signal: 'SIGTERM' }));
+  bot.stop('SIGTERM');
+});

@@ -646,8 +646,16 @@ server.listen(PORT, '0.0.0.0', () => {
 
 async function startBot() {
   console.log(JSON.stringify({ event: 'telegram_start_begin' }));
+
+  console.log(JSON.stringify({ event: 'telegram_delete_webhook_begin' }));
   await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+  console.log(JSON.stringify({ event: 'telegram_delete_webhook_done' }));
+
+  console.log(JSON.stringify({ event: 'telegram_set_commands_begin' }));
   await bot.telegram.setMyCommands(commands);
+  console.log(JSON.stringify({ event: 'telegram_set_commands_done' }));
+
+  console.log(JSON.stringify({ event: 'telegram_launch_begin' }));
   await bot.launch();
 
   console.log(JSON.stringify({
@@ -678,5 +686,25 @@ process.on('unhandledRejection', (reason) => {
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => {
   console.log(JSON.stringify({ event: 'shutdown_signal', signal: 'SIGTERM' }));
-  bot.stop('SIGTERM');
+  try {
+    bot.stop('SIGTERM');
+  } catch (err) {
+    console.error(JSON.stringify({
+      event: 'telegram_stop_error',
+      message: err?.message,
+      code: err?.code
+    }));
+  }
+
+  // Stop accepting HTTP connections so the process can exit cleanly.
+  server.close((err) => {
+    if (err) {
+      console.error(JSON.stringify({
+        event: 'http_server_close_error',
+        message: err.message,
+        code: err.code
+      }));
+      process.exitCode = 1;
+    }
+  });
 });

@@ -1,5 +1,6 @@
 const { Telegraf, Markup } = require('telegraf');
 const https = require('https');
+const http = require('http');
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 
@@ -463,12 +464,12 @@ bot.command('help', (ctx) => {
 });
 
 bot.command('bot', (ctx) => {
-  if (userSettings.size < MAX_TRACKED_USERS || userSettings.has(ctx.from.id)) if (userSettings.size < MAX_TRACKED_USERS || userSettings.has(ctx.from.id)) userSettings.set(ctx.from.id, { withBot: true });
+  if (userSettings.size < MAX_TRACKED_USERS || userSettings.has(ctx.from.id)) userSettings.set(ctx.from.id, { withBot: true });
   ctx.reply('Режим: ✅ bot', getKeyboard());
 });
 
 bot.command('nobot', (ctx) => {
-  if (userSettings.size < MAX_TRACKED_USERS || userSettings.has(ctx.from.id)) if (userSettings.size < MAX_TRACKED_USERS || userSettings.has(ctx.from.id)) userSettings.set(ctx.from.id, { withBot: false });
+  if (userSettings.size < MAX_TRACKED_USERS || userSettings.has(ctx.from.id)) userSettings.set(ctx.from.id, { withBot: false });
   ctx.reply('Режим: 🚫 bot', getKeyboard());
 });
 
@@ -594,7 +595,57 @@ bot.on('text', async (ctx) => {
   }
 });
 
+// Hostinger requires an HTTP listener to start immediately.
+// This lightweight server is also a health-check endpoint; the bot still uses long polling.
+const PORT = Number(process.env.PORT) || 3000;
+const server = http.createServer((req, res) => {
+  if (req.url === '/health' || req.url === '/') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({
+      status: 'ok',
+      service: 'translitikhost',
+      uptimeSeconds: Math.round(process.uptime())
+    }));
+    return;
+  }
+
+  res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.end(JSON.stringify({ error: 'Not found' }));
+});
+
+server.on('error', (err) => {
+  console.error(JSON.stringify({
+    event: 'http_server_error',
+    message: err?.message,
+    code: err?.code,
+    stack: err?.stack
+  }));
+  process.exit(1);
+});
+
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(JSON.stringify({
+    event: 'http_server_listening',
+    port: PORT,
+    host: '0.0.0.0',
+    node: process.version,
+    pid: process.pid
+  }));
+
+  // Start Telegram initialization only after Hostinger's required listener is ready.
+  startBot().catch((err) => {
+    console.error(JSON.stringify({
+      event: 'telegram_start_failed',
+      message: err?.message,
+      code: err?.code,
+      stack: err?.stack
+    }));
+    process.exit(1);
+  });
+});
+
 async function startBot() {
+  console.log(JSON.stringify({ event: 'telegram_start_begin' }));
   await bot.telegram.deleteWebhook({ drop_pending_updates: true });
   await bot.telegram.setMyCommands(commands);
   await bot.launch();
@@ -606,11 +657,6 @@ async function startBot() {
     uptimeSeconds: Math.round(process.uptime())
   }));
 }
-
-startBot().catch((err) => {
-  console.error('Failed to start Telegram bot:', err);
-  process.exit(1);
-});
 
 process.on('uncaughtException', (err) => {
   console.error(JSON.stringify({

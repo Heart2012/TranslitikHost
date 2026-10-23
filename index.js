@@ -463,23 +463,23 @@ bot.command('help', (ctx) => {
 });
 
 bot.command('bot', (ctx) => {
-  if (userSettings.size < MAX_TRACKED_USERS || userSettings.has(ctx.from.id)) userSettings.set(ctx.from.id, { withBot: true });
+  if (userSettings.size < MAX_TRACKED_USERS || userSettings.has(ctx.from.id)) if (userSettings.size < MAX_TRACKED_USERS || userSettings.has(ctx.from.id)) userSettings.set(ctx.from.id, { withBot: true });
   ctx.reply('Режим: ✅ bot', getKeyboard());
 });
 
 bot.command('nobot', (ctx) => {
-  if (userSettings.size < MAX_TRACKED_USERS || userSettings.has(ctx.from.id)) userSettings.set(ctx.from.id, { withBot: false });
+  if (userSettings.size < MAX_TRACKED_USERS || userSettings.has(ctx.from.id)) if (userSettings.size < MAX_TRACKED_USERS || userSettings.has(ctx.from.id)) userSettings.set(ctx.from.id, { withBot: false });
   ctx.reply('Режим: 🚫 bot', getKeyboard());
 });
 
 // нижние кнопки
 bot.hears('➕ bot', (ctx) => {
-  userSettings.set(ctx.from.id, { withBot: true });
+  if (userSettings.size < MAX_TRACKED_USERS || userSettings.has(ctx.from.id)) userSettings.set(ctx.from.id, { withBot: true });
   ctx.reply('Режим: ✅ bot', getKeyboard());
 });
 
 bot.hears('🚫 bot', (ctx) => {
-  userSettings.set(ctx.from.id, { withBot: false });
+  if (userSettings.size < MAX_TRACKED_USERS || userSettings.has(ctx.from.id)) userSettings.set(ctx.from.id, { withBot: false });
   ctx.reply('Режим: 🚫 bot', getKeyboard());
 });
 
@@ -548,7 +548,7 @@ bot.on('text', async (ctx) => {
           ? ` ⚠️ ${finalUsername.length}/${MAX_USERNAME_LENGTH}`
           : '';
 
-        finalMsg += `@${displayUsername === '' ? finalDisplayUsername : finalDisplayUsername}${ruleMark}${lengthMark} | ${availability}\n`;
+        finalMsg += `@${finalDisplayUsername}${ruleMark}${lengthMark} | ${availability}\n`;
       }
       finalMsg += '\n';
     }
